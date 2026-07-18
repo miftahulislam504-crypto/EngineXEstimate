@@ -161,6 +161,7 @@ export function parseQuantityTakeoffExport(rawJson: string): QuantityImportResul
   }
 
   // প্রতিটা floor entry-তে required field আছে কিনা
+  payload.architecturalFloors!.forEach((floor, i) => {
     const floorObj = floor as unknown as Record<string, unknown>
     const missing = REQUIRED_ARCH_FIELDS.filter(
       (f) => floorObj[f] === undefined || floorObj[f] === null
@@ -170,6 +171,7 @@ export function parseQuantityTakeoffExport(rawJson: string): QuantityImportResul
     }
   })
 
+  payload.structuralFloors!.forEach((floor, i) => {
     const floorObj = floor as unknown as Record<string, unknown>
     const missing = REQUIRED_STRUCT_FIELDS.filter(
       (f) => floorObj[f] === undefined || floorObj[f] === null
