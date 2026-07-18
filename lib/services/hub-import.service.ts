@@ -102,7 +102,7 @@ export function parseHubExport(rawJson: string): HubImportResult {
   }
 
   // ধাপ ৪ — প্রতিটা required field সত্যিই আছে কিনা (আংশিক ফর্ম-পূরণ ধরার জন্য)
-  const building = payload.buildingInfo as Record<string, unknown>
+  const building = payload.buildingInfo as unknown as Record<string, unknown>
   const missingBuildingFields = REQUIRED_BUILDING_FIELDS.filter(
     (field) => building[field] === undefined || building[field] === null
   )
@@ -112,7 +112,7 @@ export function parseHubExport(rawJson: string): HubImportResult {
     )
   }
 
-  const bnbc = payload.bnbcSettings as Record<string, unknown>
+  const bnbc = payload.bnbcSettings as unknown as Record<string, unknown>
   const missingBnbcFields = REQUIRED_BNBC_FIELDS.filter(
     (field) => bnbc[field] === undefined || bnbc[field] === null
   )
