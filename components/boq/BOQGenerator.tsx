@@ -1,0 +1,352 @@
+// components/boq/BOQGenerator.tsx
+'use client'
+
+import { useState } from 'react'
+import { Sparkles, Plus, Trash2, Pencil } from 'lucide-react'
+import { BOQItem, BOQUnit, BOQ_UNIT_LABELS } from '@/lib/types/boq.types'
+import { StoredQuantityTakeoff } from '@/lib/types/quantity-takeoff.types'
+import { generateBOQFromQuantityTakeoff, createCustomBOQItem, validateBOQItem } from '@/lib/services/boq.service'
+import { saveBOQVersion, updateActiveBOQItems } from '@/lib/firestore/boq.firestore'
+import { useLang } from '@/components/providers/LanguageProvider'
+
+// নোট: BOQ_UNIT_LABELS (m³, kg, nos, ইত্যাদি) ইচ্ছাকৃতভাবে retrofit
+// করা হয়নি — এগুলো ভাষা-নিরপেক্ষ SI/engineering unit abbreviation,
+// ভাষা যাই হোক BOQ document-এ একই থাকা উচিত standard practice
+// অনুযায়ী।
+
+interface BOQGeneratorProps {
+  projectId: string
+  quantityTakeoff: StoredQuantityTakeoff | null
+  quantityImportId: string | null
+  boqItems: BOQItem[]
+  onBOQChanged: (items: BOQItem[]) => void
+}
+
+export function BOQGenerator({
+  projectId,
+  quantityTakeoff,
+  quantityImportId,
+  boqItems,
+  onBOQChanged,
+}: BOQGeneratorProps) {
+  const { t } = useLang()
+  const [generating, setGenerating] = useState(false)
+  const [showCustomForm, setShowCustomForm] = useState(false)
+
+  async function handleGenerate() {
+    if (!quantityTakeoff) return
+    setGenerating(true)
+    try {
+      const autoItems = generateBOQFromQuantityTakeoff(quantityTakeoff)
+      const preservedManual = boqItems.filter((item) => item.source !== 'auto_rcc')
+      const merged = [...autoItems, ...preservedManual]
+      const version = await saveBOQVersion(projectId, merged, {
+        generatedFromQuantityImportId: quantityImportId ?? undefined,
+      })
+      onBOQChanged(version.items)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleDeleteItem(itemId: string) {
+    const updated = boqItems.filter((item) => item.id !== itemId)
+    await updateActiveBOQItems(projectId, updated)
+    onBOQChanged(updated)
+  }
+
+  async function handleUpdateItem(updatedItem: BOQItem) {
+    const updated = boqItems.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+    await updateActiveBOQItems(projectId, updated)
+    onBOQChanged(updated)
+  }
+
+  async function handleAddCustom(input: { itemName: string; unit: BOQUnit; quantity: number; notes?: string }) {
+    const newItem = createCustomBOQItem(input)
+    const updated = [...boqItems, newItem]
+    if (boqItems.length === 0) {
+      const version = await saveBOQVersion(projectId, updated)
+      onBOQChanged(version.items)
+    } else {
+      await updateActiveBOQItems(projectId, updated)
+      onBOQChanged(updated)
+    }
+    setShowCustomForm(false)
+  }
+
+  const totalsByUnit = boqItems.reduce<Record<string, number>>((acc, item) => {
+    acc[item.unit] = (acc[item.unit] ?? 0) + item.quantity
+    return acc
+  }, {})
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-text-primary">{t('boqGeneratorTitle')}</h2>
+          <p className="text-sm text-text-muted mt-1">{t('boqGeneratorDescription')}</p>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          className="btn-primary"
+          onClick={handleGenerate}
+          disabled={!quantityTakeoff || generating}
+          title={!quantityTakeoff ? t('importQuantityTakeoffFirst') : ''}
+        >
+          <Sparkles size={16} />
+          {generating ? t('generatingInProgress') : t('generateRefreshRccBoq')}
+        </button>
+        <button className="btn-outline" onClick={() => setShowCustomForm(true)}>
+          <Plus size={16} />
+          {t('customItem')}
+        </button>
+      </div>
+
+      {!quantityTakeoff && (
+        <p className="text-xs text-status-holdText bg-status-holdBg border border-status-holdBorder rounded-lg px-3 py-2">
+          {t('autoGenerateNeedsImport')}
+        </p>
+      )}
+
+      {showCustomForm && (
+        <CustomItemForm onCancel={() => setShowCustomForm(false)} onAdd={handleAddCustom} />
+      )}
+
+      {boqItems.length === 0 ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm text-text-muted">{t('noBoqItemsYet')}</p>
+        </div>
+      ) : (
+        <>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-surface-border text-left text-xs text-text-muted">
+                  <th className="px-4 py-2.5">{t('itemCol')}</th>
+                  <th className="px-4 py-2.5">{t('unitCol')}</th>
+                  <th className="px-4 py-2.5">{t('quantityCol')}</th>
+                  <th className="px-4 py-2.5">{t('sourceCol')}</th>
+                  <th className="px-4 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {boqItems.map((item) => (
+                  <BOQItemRow
+                    key={item.id}
+                    item={item}
+                    onUpdate={handleUpdateItem}
+                    onDelete={() => handleDeleteItem(item.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card p-4">
+            <p className="text-xs font-semibold text-text-secondary mb-2">{t('totalByUnit')}</p>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(totalsByUnit).map(([unit, total]) => (
+                <span key={unit} className="text-sm text-text-primary bg-surface-hover px-2.5 py-1 rounded-lg">
+                  {total.toFixed(2)} {BOQ_UNIT_LABELS[unit as BOQUnit]}
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+
+function BOQItemRow({
+  item,
+  onUpdate,
+  onDelete,
+}: {
+  item: BOQItem
+  onUpdate: (item: BOQItem) => void
+  onDelete: () => void
+}) {
+  const { t } = useLang()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(item)
+  const [errors, setErrors] = useState<string[]>([])
+
+  function handleSave() {
+    const validation = validateBOQItem({ itemName: draft.itemName, quantity: draft.quantity })
+    if (!validation.valid) {
+      setErrors(validation.errors)
+      return
+    }
+    onUpdate(draft)
+    setEditing(false)
+    setErrors([])
+  }
+
+  if (editing) {
+    return (
+      <tr className="border-b border-surface-border last:border-0 bg-brand-50/40">
+        <td className="px-4 py-2">
+          <input
+            value={draft.itemName}
+            onChange={(e) => setDraft({ ...draft, itemName: e.target.value })}
+            className="input-field text-sm py-1"
+          />
+        </td>
+        <td className="px-4 py-2">
+          <select
+            value={draft.unit}
+            onChange={(e) => setDraft({ ...draft, unit: e.target.value as BOQUnit })}
+            className="input-field text-sm py-1"
+          >
+            {Object.entries(BOQ_UNIT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </td>
+        <td className="px-4 py-2">
+          <input
+            type="number"
+            value={draft.quantity}
+            onChange={(e) => setDraft({ ...draft, quantity: parseFloat(e.target.value) || 0 })}
+            className="input-field w-24 text-sm py-1"
+          />
+        </td>
+        <td className="px-4 py-2 text-xs text-text-muted">
+          {item.source === 'auto_rcc' ? t('autoRcc') : t('manual')}
+        </td>
+        <td className="px-4 py-2 whitespace-nowrap">
+          <button className="btn-primary py-1 px-2 text-xs" onClick={handleSave}>
+            {t('save')}
+          </button>
+          <button className="btn-ghost py-1 px-2 text-xs" onClick={() => setEditing(false)}>
+            {t('cancel')}
+          </button>
+          {errors.length > 0 && <p className="text-xs text-red-600 mt-1">{errors[0]}</p>}
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr className="border-b border-surface-border last:border-0 hover:bg-surface-hover">
+      <td className="px-4 py-2.5 text-text-primary">
+        {item.itemName}
+        {item.notes && <p className="text-xs text-text-muted mt-0.5">{item.notes}</p>}
+      </td>
+      <td className="px-4 py-2.5">{BOQ_UNIT_LABELS[item.unit]}</td>
+      <td className="px-4 py-2.5 font-medium">{item.quantity}</td>
+      <td className="px-4 py-2.5 text-xs text-text-muted">
+        {item.source === 'auto_rcc' ? t('autoRcc') : t('manual')}
+      </td>
+      <td className="px-4 py-2.5 whitespace-nowrap">
+        <button
+          onClick={() => {
+            setDraft(item)
+            setEditing(true)
+          }}
+          className="text-text-muted hover:text-brand-600 p-1"
+          title={t('editThis')}
+        >
+          <Pencil size={14} />
+        </button>
+        <button onClick={onDelete} className="text-text-muted hover:text-red-600 p-1" title={t('delete')}>
+          <Trash2 size={14} />
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+
+function CustomItemForm({
+  onCancel,
+  onAdd,
+}: {
+  onCancel: () => void
+  onAdd: (input: { itemName: string; unit: BOQUnit; quantity: number; notes?: string }) => void
+}) {
+  const { t } = useLang()
+  const [itemName, setItemName] = useState('')
+  const [unit, setUnit] = useState<BOQUnit>('m3')
+  const [quantity, setQuantity] = useState('')
+  const [notes, setNotes] = useState('')
+  const [errors, setErrors] = useState<string[]>([])
+
+  function handleSubmit() {
+    const parsedQty = parseFloat(quantity)
+    const validation = validateBOQItem({ itemName, quantity: parsedQty })
+    if (!validation.valid) {
+      setErrors(validation.errors)
+      return
+    }
+    onAdd({ itemName: itemName.trim(), unit, quantity: parsedQty, notes: notes.trim() || undefined })
+  }
+
+  return (
+    <div className="card p-5 space-y-3">
+      <h3 className="text-sm font-semibold text-text-primary">{t('addNewCustomItem')}</h3>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-text-secondary mb-1">{t('itemName')}</label>
+          <input
+            value={itemName}
+            onChange={(e) => setItemName(e.target.value)}
+            placeholder="যেমন: Earthwork - Foundation Excavation"
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">{t('unit')}</label>
+          <select value={unit} onChange={(e) => setUnit(e.target.value as BOQUnit)} className="input-field">
+            {Object.entries(BOQ_UNIT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1">{t('quantityCol')}</label>
+          <input
+            type="number"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            className="input-field"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-text-secondary mb-1">{t('notesOptional')}</label>
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="input-field" />
+        </div>
+      </div>
+
+      {errors.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+          <ul className="text-xs text-red-700 list-disc list-inside space-y-0.5">
+            {errors.map((err, i) => (
+              <li key={i}>{err}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex gap-2 justify-end">
+        <button className="btn-ghost" onClick={onCancel}>
+          {t('cancel')}
+        </button>
+        <button className="btn-primary" onClick={handleSubmit}>
+          {t('add')}
+        </button>
+      </div>
+    </div>
+  )
+}
