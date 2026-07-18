@@ -186,7 +186,11 @@ export function TenderPanel({ projectId }: TenderPanelProps) {
               {comparativeStatement.map((row) => (
                 <tr key={row.bidId} className="border-b border-surface-border last:border-0 hover:bg-surface-hover">
                   <td className="px-4 py-2.5">
-                    {row.isLowestBid && <Award size={14} className="text-brand-600" title={t('lowestBidTitle')} />}
+                    {row.isLowestBid && (
+                      <span title={t('lowestBidTitle')} className="inline-flex">
+                        <Award size={14} className="text-brand-600" />
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-text-primary font-medium">{row.contractorName}</td>
                   <td className="px-4 py-2.5">৳{row.bidAmount.toLocaleString(locale)}</td>
