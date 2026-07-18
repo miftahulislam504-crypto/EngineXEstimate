@@ -11,9 +11,7 @@ import {
   HubImportResult,
 } from '@/lib/types/hub-import.types'
 
-const REQUIRED_BUILDING_FIELDS: (keyof HubExportPayload['buildingInfo'] extends undefined
-  ? never
-  : keyof NonNullable<HubExportPayload['buildingInfo']>)[] = [
+const REQUIRED_BUILDING_FIELDS: (keyof NonNullable<HubExportPayload['buildingInfo']>)[] = [
   'buildingType',
   'usageType',
   'structureSystem',
