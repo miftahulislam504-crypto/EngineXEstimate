@@ -25,6 +25,19 @@
 import jsPDF from 'jspdf'
 import autoTable, { RowInput } from 'jspdf-autotable'
 
+// jspdf-autotable v3 প্লাগইন runtime-এ doc.lastAutoTable attach করে,
+// কিন্তু এই package-এর নিজস্ব .d.ts টাইপে সেটা declare করা নেই।
+// তাই এখানে module augmentation দিয়ে jsPDF টাইপকে extend করা হচ্ছে,
+// যাতে নিচের drawPdfTable ফাংশনে doc.lastAutoTable.finalY টাইপ-সেফভাবে
+// ব্যবহার করা যায়।
+declare module 'jspdf' {
+  interface jsPDF {
+    lastAutoTable?: {
+      finalY: number
+    }
+  }
+}
+
 export const PDF_BRAND_COLOR: [number, number, number] = [21, 128, 61] // brand-700-এর কাছাকাছি সবুজ, globals.css টোকেনের সাথে সামঞ্জস্যপূর্ণ
 export const PDF_MUTED_COLOR: [number, number, number] = [107, 114, 128]
 
@@ -114,7 +127,7 @@ export function drawPdfTable(
   // jspdf-autotable প্লাগইন doc-এ lastAutoTable attach করে (টাইপ
   // declaration-এ augment করা আছে) — পরবর্তী table/content কোথা
   // থেকে শুরু হবে সেই Y-position এখান থেকে বের করা।
-  return doc.lastAutoTable.finalY + 8
+  return (doc.lastAutoTable?.finalY ?? startY) + 8
 }
 
 /**
