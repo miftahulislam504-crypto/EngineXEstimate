@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Wallet, Package, Users, Wrench, TrendingUp, PieChart, AlertCircle } from 'lucide-react'
+import { Wallet, Package, Users, Wrench, TrendingUp, PieChart, AlertCircle, type LucideIcon } from 'lucide-react'
 import { BOQItem } from '@/lib/types/boq.types'
 import { getRateAnalysis } from '@/lib/firestore/rate-analysis.firestore'
 import { listMaterials } from '@/lib/firestore/material.firestore'
@@ -167,7 +167,7 @@ function SummaryCard({
   locale,
   highlight,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>
+  icon: LucideIcon
   label: string
   value: number
   locale: string
