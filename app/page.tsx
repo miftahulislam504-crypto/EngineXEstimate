@@ -1,129 +1,60 @@
+// app/page.tsx — Project Selector
+//
+// আগে এই পেজটাই ছিল Phase 0 smoke test (login + সব ১৫টা module
+// একসাথে stack করা)। পুরনো সংস্করণ app/page.tsx.phase0-backup-এ
+// রাখা হয়েছে module migration-এর সময় reference-এর জন্য, পরে মুছে
+// ফেলা হবে। এখন এটা root landing: লগইনের পর ব্যবহারকারীর প্রজেক্ট
+// list — কার্ডে ক্লিক করলে /project/[projectId]/dashboard এ ঢোকে।
+// Login ফর্ম নিজের /login route-এ সরে গেছে; সব module নিজের
+// /project/[projectId]/{module} route-এ সরছে (পরের ধাপে)।
+//
+// Hub-এর app/dashboard/projects/page.tsx-এর টেবিল/সার্চ/ফিল্টার UI
+// থেকে গঠন ধার করা হয়েছে, কিন্তু write action (delete, status
+// change) বাদ — Estimating প্রজেক্ট তৈরি/সম্পাদনা/মুছা করে না, সেটা
+// Hub-এর দায়িত্ব (lib/firestore/project.firestore.ts-এর কমেন্টে
+// বিস্তারিত কারণ)।
+
 'use client'
 
-import { useState, useEffect } from 'react'
-import { HubImportPanel } from '@/components/hub-import/HubImportPanel'
-import { SignInForm } from '@/components/auth/SignInForm'
-import {
-  saveHubImport,
-  getHubImportHistory,
-  StoredHubImport,
-} from '@/lib/firestore/hub-import.firestore'
-import { EstimatingRelevantPayload } from '@/lib/types/hub-import.types'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import Image from 'next/image'
+import { Loader2, Search, FolderOpen, ChevronRight, ExternalLink, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useProjectStore } from '@/store/useProjectStore'
 import { useLang } from '@/components/providers/LanguageProvider'
 import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
-import { MaterialDatabase } from '@/components/materials/MaterialDatabase'
-import { VendorPanel } from '@/components/vendor/VendorPanel'
-import { QuantityImportPanel } from '@/components/quantity-takeoff/QuantityImportPanel'
-import { QuantityBreakdown } from '@/components/quantity-takeoff/QuantityBreakdown'
-import {
-  saveQuantityTakeoff,
-  getActiveQuantityTakeoff,
-} from '@/lib/firestore/quantity-takeoff.firestore'
-import { QuantityTakeoffExport, StoredQuantityTakeoff } from '@/lib/types/quantity-takeoff.types'
-import { BOQGenerator } from '@/components/boq/BOQGenerator'
-import { getActiveBOQVersion } from '@/lib/firestore/boq.firestore'
-import { BOQItem } from '@/lib/types/boq.types'
-import { ResourceRateManager } from '@/components/resource-rates/ResourceRateManager'
-import { RateAnalysisPanel } from '@/components/rate-analysis/RateAnalysisPanel'
-import { ProcurementPanel } from '@/components/procurement/ProcurementPanel'
-import { BBSTable } from '@/components/reinforcement/BBSTable'
-import { ProjectDashboard } from '@/components/dashboard/ProjectDashboard'
-import { CostTrackingPanel } from '@/components/cost-tracking/CostTrackingPanel'
-import { BudgetPanel } from '@/components/budget/BudgetPanel'
-import { TenderPanel } from '@/components/tender/TenderPanel'
-import { ReportsPanel } from '@/components/reports/ReportsPanel'
-import { IntegrationHubPanel } from '@/components/integration/IntegrationHubPanel'
-import { Loader2 } from 'lucide-react'
+import { Project, ProjectStatus } from '@/lib/types/project.types'
+import { formatDate, getStatusBadgeClass, getStatusBarColor, getStatusLabelKey } from '@/lib/utils'
 
-// এই পেজটা Phase 0-এর স্মোক টেস্ট হিসেবে রাখা হয়েছে — Module 1
-// (Dashboard) তৈরি হলে এটাই আসল হোমপেজ হবে না, তখন এই import ফ্লো
-// একটা নির্দিষ্ট Module/route-এ সরে যাবে (সম্ভবত প্রজেক্ট
-// setup/onboarding-এর অংশ হিসেবে), আর auth flow আলাদা /login পেজে
-// সরে যাবে Hub-এর প্যাটার্ন অনুসরণ করে।
+const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL ?? 'https://enginex-hub.vercel.app'
 
-export default function Home() {
-  const { user, estimatingRole, initialized, initialize, signOut } = useAuthStore()
-  const { t } = useLang()
+const STATUS_FILTERS: { value: ProjectStatus | ''; labelKey: 'filterAll' | 'statusActive' | 'statusOnHold' | 'statusCompleted' }[] = [
+  { value: '', labelKey: 'filterAll' },
+  { value: 'active', labelKey: 'statusActive' },
+  { value: 'on_hold', labelKey: 'statusOnHold' },
+  { value: 'completed', labelKey: 'statusCompleted' },
+]
 
-  const [imported, setImported] = useState<EstimatingRelevantPayload | null>(null)
-  const [savedVersion, setSavedVersion] = useState<StoredHubImport | null>(null)
-  const [history, setHistory] = useState<StoredHubImport[]>([])
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+export default function ProjectSelectorPage() {
+  const router = useRouter()
+  const { user, initialized, signOut } = useAuthStore()
+  const { projects, loading, error, fetchProjects } = useProjectStore()
+  const { t, lang } = useLang()
 
-  // Module 2 — Quantity Takeoff state
-  const [quantityImportId, setQuantityImportId] = useState<string | null>(null)
-  const [quantityData, setQuantityData] = useState<StoredQuantityTakeoff | null>(null)
-  const [quantityProjectId, setQuantityProjectId] = useState<string | null>(null)
-  const [quantitySaving, setQuantitySaving] = useState(false)
-  const [quantitySaveError, setQuantitySaveError] = useState<string | null>(null)
-
-  // Module 3 — BOQ Generator state
-  const [boqItems, setBoqItems] = useState<BOQItem[]>([])
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<ProjectStatus | ''>('')
 
   useEffect(() => {
-    const unsub = initialize()
-    return unsub
-  }, [initialize])
+    if (initialized && !user) router.replace('/login')
+  }, [user, initialized, router])
 
-  // যদি এই ব্রাউজারে আগে থেকেই Hub import করা প্রজেক্ট থাকে, সেই
-  // প্রজেক্টের active quantity takeoff ও active BOQ version (যদি
-  // থাকে) লোড করার চেষ্টা — যাতে পেজ রিফ্রেশ করলে Module 2/3-র ডেটা
-  // হারিয়ে না যায়।
   useEffect(() => {
-    if (imported?.projectId) {
-      getActiveQuantityTakeoff(imported.projectId).then((active) => {
-        if (active) {
-          setQuantityData(active)
-          setQuantityImportId(active.importId)
-          setQuantityProjectId(imported.projectId)
-        }
-      })
-      getActiveBOQVersion(imported.projectId).then((version) => {
-        if (version) setBoqItems(version.items)
-      })
-    }
-  }, [imported?.projectId])
+    if (user) fetchProjects(user.uid)
+  }, [user, fetchProjects])
 
-  async function handleImportSuccess(payload: EstimatingRelevantPayload) {
-    setImported(payload)
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const stored = await saveHubImport(payload.projectId, payload)
-      setSavedVersion(stored)
-      const pastImports = await getHubImportHistory(payload.projectId)
-      setHistory(pastImports)
-    } catch (err) {
-      setSaveError(t('hubImportSaveError'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleQuantityImportSuccess(payload: QuantityTakeoffExport) {
-    setQuantitySaving(true)
-    setQuantitySaveError(null)
-    try {
-      const stored = await saveQuantityTakeoff(payload)
-      setQuantityData(stored)
-      setQuantityImportId(stored.importId)
-      setQuantityProjectId(payload.projectId)
-    } catch {
-      setQuantitySaveError(t('quantityTakeoffSaveError'))
-    } finally {
-      setQuantitySaving(false)
-    }
-  }
-
-  async function refreshQuantityData() {
-    if (!quantityProjectId) return
-    const active = await getActiveQuantityTakeoff(quantityProjectId)
-    if (active) setQuantityData(active)
-  }
-
-  if (!initialized) {
+  if (!initialized || (initialized && !user)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface">
         <Loader2 className="animate-spin text-brand-600" size={32} />
@@ -131,220 +62,145 @@ export default function Home() {
     )
   }
 
-  if (!user) {
-    return (
-      <main className="min-h-screen bg-surface px-4 py-12">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-8 flex items-center justify-between">
-            <div className="text-center flex-1">
-              <h1 className="text-2xl font-bold text-text-primary">{t('appName')}</h1>
-              <p className="mt-1 text-sm text-text-muted">{t('authSmokeTestSubtitle')}</p>
-            </div>
-            <LanguageSwitcher />
-          </div>
-          <SignInForm />
-        </div>
-      </main>
-    )
-  }
+  const q = search.toLowerCase().trim()
+  const filtered = projects.filter((p) => {
+    const matchFilter = !filter || p.status === filter
+    const matchSearch =
+      !q ||
+      p.projectName.toLowerCase().includes(q) ||
+      p.clientName.toLowerCase().includes(q) ||
+      p.location.toLowerCase().includes(q) ||
+      p.projectCode.toLowerCase().includes(q)
+    return matchFilter && matchSearch
+  })
 
   return (
-    <main className="min-h-screen bg-surface px-4 py-12">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
+    <main className="min-h-screen bg-surface">
+      {/* Topbar */}
+      <header className="bg-surface-card border-b border-surface-border px-4 lg:px-8 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
+            <Image src="/logo.png" alt="CivilOS" width={20} height={20} className="object-contain brightness-0 invert" priority />
+          </div>
+          <span className="font-bold text-sm text-text-primary">{t('appName')}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <button className="btn-ghost" onClick={() => signOut()}>
+            {t('signOut')}
+          </button>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-4 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">{t('appName')}</h1>
-            <p className="mt-1 text-sm text-text-muted">
-              {t('signedIn')} — {user.email} · {t('role')}: {estimatingRole ?? t('unknownRole')}
+            <h1 className="text-xl font-bold text-text-primary">{t('yourProjects')}</h1>
+            <p className="text-sm text-text-muted mt-0.5">
+              {projects.length} {t('projectCountSuffix')}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <LanguageSwitcher />
-            <button className="btn-ghost" onClick={() => signOut()}>
-              {t('signOut')}
+          <a href={HUB_URL} target="_blank" rel="noopener noreferrer" className="btn-outline">
+            <ExternalLink size={15} />
+            {t('openInHub')}
+          </a>
+        </div>
+
+        {/* সার্চ + ফিল্টার — প্রজেক্ট থাকলেই শুধু দেখানো, খালি হলে দরকার নেই */}
+        {projects.length > 0 && (
+          <div className="card p-4 mb-5">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('searchProjectsPlaceholder')}
+                  className="input-field pl-9"
+                />
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {STATUS_FILTERS.map((f) => (
+                  <button
+                    key={f.value}
+                    onClick={() => setFilter(f.value)}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
+                      filter === f.value
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-text-secondary border-surface-border hover:border-brand-300'
+                    }`}
+                  >
+                    {t(f.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content states */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2">
+            <Loader2 className="animate-spin text-brand-600" size={28} />
+            <p className="text-sm text-text-muted">{t('loadingProjects')}</p>
+          </div>
+        ) : error ? (
+          <div className="card py-12 text-center">
+            <AlertCircle size={32} className="text-red-500 mx-auto mb-3" />
+            <p className="text-sm text-text-secondary mb-4">{t('projectsLoadError')}</p>
+            <button className="btn-outline" onClick={() => user && fetchProjects(user.uid)}>
+              {t('retry')}
             </button>
           </div>
-        </div>
-
-        {/* Module 1 — Dashboard (এখন পর্যন্ত বানানো সব Module-এর সারসংক্ষেপ) */}
-        {quantityProjectId && imported && (
-          <div className="card p-6">
-            <ProjectDashboard
-              projectId={quantityProjectId}
-              projectName={imported.projectName}
-              boqItems={boqItems}
-            />
+        ) : projects.length === 0 ? (
+          <div className="card py-16 text-center px-6">
+            <FolderOpen size={40} className="text-text-muted mx-auto mb-3 opacity-30" />
+            <p className="text-text-secondary font-medium text-sm mb-1">{t('noProjectsYetTitle')}</p>
+            <p className="text-text-muted text-sm max-w-sm mx-auto mb-4">{t('noProjectsYetBody')}</p>
+            <a href={HUB_URL} target="_blank" rel="noopener noreferrer" className="btn-primary inline-flex text-sm">
+              <ExternalLink size={15} />
+              {t('openInHub')}
+            </a>
           </div>
-        )}
-
-        {/* Module 11 — Cost Tracking (Dashboard-এর অসম্পূর্ণ Budget vs Actual অংশ পূরণ করে) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <CostTrackingPanel projectId={quantityProjectId} />
+        ) : filtered.length === 0 ? (
+          <div className="card py-16 text-center">
+            <FolderOpen size={40} className="text-text-muted mx-auto mb-3 opacity-30" />
+            <p className="text-text-secondary font-medium text-sm">{t('noProjectsFound')}</p>
           </div>
-        )}
-
-        {/* Module 5/6 — Material Database */}
-        <div className="card p-6">
-          <MaterialDatabase />
-        </div>
-
-        {/* Module 9 — Vendor Management (supplier organization-wide, quotation/purchase project-scoped) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <VendorPanel projectId={quantityProjectId} />
-          </div>
-        )}
-
-        {/* Module 4-এর অংশ — Labour/Equipment rate, Material-এর মতোই organization-wide, projectId লাগে না */}
-        <div className="card p-6">
-          <ResourceRateManager />
-        </div>
-
-        {/* Module 2 — Quantity Takeoff */}
-        <div className="card p-6 space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-text-primary">{t('quantityTakeoffTitle')}</h2>
-            <p className="text-sm text-text-muted mt-1">{t('quantityTakeoffDescription')}</p>
-          </div>
-
-          {!quantityData ? (
-            <QuantityImportPanel onImportSuccess={handleQuantityImportSuccess} />
-          ) : (
-            <div className="space-y-4">
-              {quantitySaving && <p className="text-xs text-text-muted">{t('savingInProgress')}</p>}
-              {quantitySaveError && <p className="text-xs text-red-600">{quantitySaveError}</p>}
-              <QuantityBreakdown
-                projectId={quantityProjectId!}
-                importId={quantityImportId!}
-                data={quantityData}
-                onDataChanged={refreshQuantityData}
-              />
-              <button
-                className="btn-outline"
-                onClick={() => {
-                  setQuantityData(null)
-                  setQuantityImportId(null)
-                }}
-              >
-                {t('importNewQuantityTakeoff')}
-              </button>
+        ) : (
+          <div className="card overflow-hidden">
+            <div className="hidden sm:grid grid-cols-[1fr_140px_100px_36px] gap-4 px-5 py-2.5 bg-surface border-b border-surface-border">
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">{t('yourProjects')}</span>
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Client</span>
+              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">{t('filterAll')}</span>
+              <span />
             </div>
-          )}
-        </div>
-
-        {/* Module 3 — BOQ Generator */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <BOQGenerator
-              projectId={quantityProjectId}
-              quantityTakeoff={quantityData}
-              quantityImportId={quantityImportId}
-              boqItems={boqItems}
-              onBOQChanged={setBoqItems}
-            />
-          </div>
-        )}
-
-        {/* Module 4 — Rate Analysis */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <RateAnalysisPanel projectId={quantityProjectId} boqItems={boqItems} />
-          </div>
-        )}
-
-        {/* Module 8 — Procurement Planning (BOQ + Rate Analysis + BBS-এর উপর নির্ভরশীল) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <ProcurementPanel projectId={quantityProjectId} boqItems={boqItems} />
-          </div>
-        )}
-
-        {/* Module 7 — Reinforcement Estimation (BBS) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <BBSTable projectId={quantityProjectId} />
-          </div>
-        )}
-
-        {/* Module 10 — Budget Planning (এখানেই আসল admin-gated write test হয়) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <BudgetPanel projectId={quantityProjectId} />
-          </div>
-        )}
-
-        {/* Module 12 — Tender Estimation (একই admin-gated finalize প্যাটার্ন) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <TenderPanel projectId={quantityProjectId} />
-          </div>
-        )}
-
-        {/* Module 13 — Reports (এই ধাপে শুধু PDF export) */}
-        {quantityProjectId && imported && (
-          <div className="card p-6">
-            <ReportsPanel
-              projectId={quantityProjectId}
-              projectName={imported.projectName}
-              projectCode={imported.projectCode}
-            />
-          </div>
-        )}
-
-        {/* Module 15 — Integration Hub (Hub-এর path চূড়ান্ত হওয়ার অপেক্ষায়,
-            নিজেদের দিকের registry/listener/sync-log foundation রেডি) */}
-        {quantityProjectId && (
-          <div className="card p-6">
-            <IntegrationHubPanel projectId={quantityProjectId} />
-          </div>
-        )}
-
-        {/* Hub import panel */}
-        <div className="card p-6">
-          {!imported ? (
-            <HubImportPanel onImportSuccess={handleImportSuccess} />
-          ) : (
-            <div className="space-y-4">
-              <div className="badge-active">✓ {t('dataVerified')}</div>
-              <div>
-                <p className="text-sm text-text-secondary">
-                  <span className="font-medium">{imported.projectName}</span> ({imported.projectCode})
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {imported.buildingInfo.numFloors} {t('floors')} · {imported.buildingInfo.buildingType} ·
-                  {t('liveLoad')} {imported.bnbcSettings.liveLoadValue} kN/m²
-                </p>
-              </div>
-
-              {saving && <p className="text-xs text-text-muted">{t('firestoreSaving')}</p>}
-              {saveError && <p className="text-xs text-red-600">{saveError}</p>}
-              {!saving && !saveError && savedVersion && (
-                <div className="space-y-1">
-                  <p className="text-xs text-status-activeText">
-                    {t('firestoreSaved', { version: savedVersion.importId })}
-                  </p>
-                  {history.length > 1 && (
-                    <p className="text-xs text-text-muted">
-                      {t('totalImportHistory', { count: history.length })}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <button
-                className="btn-outline"
-                onClick={() => {
-                  setImported(null)
-                  setSavedVersion(null)
-                  setHistory([])
-                }}
-              >
-                {t('importAnother')}
-              </button>
+            <div>
+              {filtered.map((p: Project) => (
+                <Link key={p.id} href={`/project/${p.id}/dashboard`} className="table-row group">
+                  <div className={`w-0.5 h-10 rounded-full flex-shrink-0 ${getStatusBarColor(p.status)}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-text-primary text-sm truncate">{p.projectName}</span>
+                      <span className="text-xs font-mono text-text-muted bg-surface px-1.5 py-0.5 rounded-md hidden sm:inline">
+                        {p.projectCode}
+                      </span>
+                    </div>
+                    <div className="text-xs text-text-muted truncate mt-0.5">
+                      {p.location} · {formatDate(p.startDate, lang)}
+                    </div>
+                  </div>
+                  <div className="hidden sm:block text-sm text-text-secondary truncate w-[140px]">{p.clientName}</div>
+                  <div className="flex-shrink-0">
+                    <span className={getStatusBadgeClass(p.status)}>{t(getStatusLabelKey(p.status))}</span>
+                  </div>
+                  <ChevronRight size={15} className="text-text-muted flex-shrink-0" />
+                </Link>
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   )

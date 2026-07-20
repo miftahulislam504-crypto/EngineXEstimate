@@ -1,0 +1,2 @@
+REMOVED (v3 → v4 migration): tailwind.config.ts — replaced by @theme block in app/globals.css
+REMOVED (v3 → v4 migration): postcss.config.js — replaced by postcss.config.mjs

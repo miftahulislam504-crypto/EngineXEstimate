@@ -1,16 +1,159 @@
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /*
- * এই ফাইলটা Hub-এর app/globals.css-এর সাথে হুবহু মিলিয়ে রাখা হয়েছে।
- * .btn-primary, .card, .input-field, .badge-* — এই component
- * class-গুলো Module 1 (Dashboard status badge), Module 3 (BOQ table
- * row), ইত্যাদিতে সরাসরি লাগবে। এখানে বদল আনলে Hub-এও একসাথে আনা
- * উচিত, নাহলে দুই app এর UI ধীরে ধীরে আলাদা হয়ে যাবে।
+ * ══════════════════════════════════════════════════════════════
+ * Tailwind v4 migration (v3 → v4)
+ * ══════════════════════════════════════════════════════════════
+ * আগে এই ফাইলে @tailwind base/components/utilities + একটা আলাদা
+ * tailwind.config.ts ছিল (brand-*/surface-*/text-*/status-* স্কেল)।
+ * v4-এ config ফাইল নেই — সব টোকেন এখানে CSS custom property হিসেবে
+ * @theme ব্লকে সংজ্ঞায়িত। পুরনো v3 config _migration-reference/
+ * tailwind.config.ts.v3-backup-এ রাখা আছে রেফারেন্সের জন্য।
+ *
+ * রঙ পরিবর্তন: আগে brand-* ছিল নীল স্কেল (#2563eb ইত্যাদি) — এখন
+ * grayscale/oklch (PM app তথা CivilOS PM-এর সাথে মিলিয়ে, যেটাই
+ * ecosystem-এর নতুন স্থায়ী সিদ্ধান্ত)। ক্লাস নাম (brand-50...900)
+ * ইচ্ছাকৃতভাবে অপরিবর্তিত রাখা হয়েছে — শুধু মান বদলেছে, নাম না —
+ * যাতে .btn-primary, .nav-item-active ইত্যাদি কোনো component ফাইল
+ * স্পর্শ না করেই নতুন রঙে switch হয়ে যায়।
+ *
+ * এই ফাইলটা Hub-এর app/globals.css-এর সাথে হুবহু মিলিয়ে রাখা
+ * হয়েছে (Hub-ও একই migration পেয়েছে)। এখানে বদল আনলে Hub-এও
+ * একসাথে আনা উচিত।
  */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  /* ── Brand scale (grayscale/oklch — PM app-এর সাথে মিলিয়ে) ──
+   * PM app-এর --primary: oklch(0.205 0 0) কেন্দ্র করে একটা পূর্ণ
+   * ৫০–৯০০ স্কেল বানানো হয়েছে (PM app নিজে শুধু primary/secondary
+   * রাখে, ৯-ধাপি স্কেল রাখে না — Estimating/Hub-এর brand-50 থেকে
+   * brand-900 পর্যন্ত সব শেড দরকার হয় বলে এই সম্প্রসারণ)। lightness
+   * PM-এর background/muted/foreground-এর সাথে সমানুপাতিক ধাপে। */
+  --brand-50: oklch(0.985 0 0);
+  --brand-100: oklch(0.97 0 0);
+  --brand-200: oklch(0.922 0 0);
+  --brand-500: oklch(0.556 0 0);
+  --brand-600: oklch(0.435 0 0);
+  --brand-700: oklch(0.32 0 0);
+  --brand-800: oklch(0.205 0 0);
+  --brand-900: oklch(0.145 0 0);
+
+  /* ── Surface / text (PM app-এর background/card/foreground/muted থেকে) ── */
+  --surface: oklch(0.985 0 0);
+  --surface-card: oklch(1 0 0);
+  --surface-hover: oklch(0.97 0 0);
+  --surface-border: oklch(0.922 0 0);
+  --text-primary: oklch(0.145 0 0);
+  --text-secondary: oklch(0.32 0 0);
+  --text-muted: oklch(0.556 0 0);
+
+  /* ── Status colors (grayscale palette-এ ব্যাজ আলাদা করার জন্য
+   * সীমিত hue রাখা হয়েছে — সম্পূর্ণ grayscale করলে active/hold/done
+   * status আলাদা করা যেত না, যেটা ব্যবহারযোগ্যতার জন্য জরুরি। PM
+   * app-এর --success/--warning/--destructive hue-এর সাথে সামঞ্জস্য
+   * রেখে সবচেয়ে কম saturation ব্যবহার করা হয়েছে) ── */
+  --status-activeText: oklch(0.45 0.13 145);
+  --status-activeBg: oklch(0.96 0.03 145);
+  --status-activeBorder: oklch(0.85 0.08 145);
+  --status-holdText: oklch(0.55 0.14 75);
+  --status-holdBg: oklch(0.96 0.04 75);
+  --status-holdBorder: oklch(0.85 0.1 75);
+  --status-doneText: oklch(0.32 0 0);
+  --status-doneBg: oklch(0.94 0 0);
+  --status-doneBorder: oklch(0.8 0 0);
+
+  /* ── shadcn/ui semantic টোকেন (PM app parity — ভবিষ্যতে shadcn/ui
+   * কম্পোনেন্ট যোগ হলে দরকার হবে) ── */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --success: oklch(0.6 0.15 145);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.15 75);
+  --warning-foreground: oklch(0.145 0 0);
+}
+
+@theme inline {
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-surface: var(--surface);
+  --color-surface-card: var(--surface-card);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-border: var(--surface-border);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-status-activeText: var(--status-activeText);
+  --color-status-activeBg: var(--status-activeBg);
+  --color-status-activeBorder: var(--status-activeBorder);
+  --color-status-holdText: var(--status-holdText);
+  --color-status-holdBg: var(--status-holdBg);
+  --color-status-holdBorder: var(--status-holdBorder);
+  --color-status-doneText: var(--status-doneText);
+  --color-status-doneBg: var(--status-doneBg);
+  --color-status-doneBorder: var(--status-doneBorder);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: 'Inter', sans-serif;
+  --font-display: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
+}
 
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }

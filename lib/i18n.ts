@@ -27,6 +27,48 @@ export const translations = {
   bn: {
     // ── App shell / Auth ──────────────────────────────────────
     appName: 'CivilOS Estimating',
+    loginTagline: 'ইস্টিমেটিং, কস্টিং ও বিওকিউ',
+    loginFeatureBoq: 'স্বয়ংক্রিয় BOQ তৈরি',
+    loginFeatureQuantity: 'কোয়ান্টিটি টেকঅফ',
+    loginFeatureRate: 'রেট অ্যানালাইসিস',
+    loginFeatureHub: 'Hub প্রজেক্টের সাথে সংযুক্ত',
+    statusActive: 'চলমান',
+    statusOnHold: 'বিরতি',
+    statusCompleted: 'সম্পন্ন',
+
+    // ── Sidebar navigation (সংক্ষিপ্ত label, panel heading থেকে আলাদা) ──
+    navDashboard: 'ড্যাশবোর্ড',
+    navQuantityTakeoff: 'কোয়ান্টিটি টেকঅফ',
+    navBoq: 'BOQ',
+    navRateAnalysis: 'রেট অ্যানালাইসিস',
+    resourceRatesTab: 'লেবার ও ইকুইপমেন্ট রেট',
+    navMaterials: 'ম্যাটেরিয়াল',
+    navVendors: 'ভেন্ডর',
+    navProcurement: 'প্রকিউরমেন্ট',
+    navReinforcement: 'BBS',
+    navBudget: 'বাজেট',
+    navTender: 'টেন্ডার',
+    navCostTracking: 'কস্ট ট্র্যাকিং',
+    navReports: 'রিপোর্টস',
+    navIntegration: 'ইন্টিগ্রেশন',
+    switchProject: 'প্রজেক্ট বদলান',
+    projectNotFound: 'প্রজেক্ট পাওয়া যায়নি',
+    noHubImportYetTitle: 'এখনো Hub থেকে ডেটা আসেনি',
+    noHubImportYetBody: 'এই প্রজেক্টের building ও BNBC তথ্য এখনো Hub থেকে import হয়নি — Integration ট্যাবে গিয়ে import করুন।',
+
+    // ── Project Selector পেজ ──────────────────────────────────
+    yourProjects: 'আপনার প্রজেক্ট',
+    projectCountSuffix: 'টি প্রজেক্ট',
+    searchProjectsPlaceholder: 'নাম, ক্লায়েন্ট, বা কোড দিয়ে খুঁজুন...',
+    filterAll: 'সব',
+    noProjectsFound: 'কোনো প্রজেক্ট পাওয়া যায়নি',
+    noProjectsYetTitle: 'এখনো কোনো প্রজেক্ট নেই',
+    noProjectsYetBody: 'CivilOS Hub-এ গিয়ে একটা প্রজেক্ট তৈরি করুন — এখানে সেটা স্বয়ংক্রিয়ভাবে দেখাবে।',
+    openInHub: 'Hub-এ খুলুন',
+    loadingProjects: 'প্রজেক্ট লোড হচ্ছে...',
+    projectsLoadError: 'প্রজেক্ট লোড করা যায়নি। আবার চেষ্টা করুন।',
+    retry: 'আবার চেষ্টা করুন',
+
     signedInAs: 'সাইন ইন করা আছে',
     role: 'role',
     unknownRole: 'অজানা',
@@ -91,6 +133,9 @@ export const translations = {
 
     // ── HubImportPanel + QuantityImportPanel (shared import-panel pattern) ──
     hubImportTitle: 'Hub থেকে প্রজেক্ট ডেটা আনুন',
+    hubImportFirstTimeHint: 'এই প্রজেক্টে এখনো কোনো Hub import হয়নি — নিচে থেকে প্রথম import করুন।',
+    hubImportReimportHint: 'Hub-এ ডেটা বদলেছে? নিচে থেকে আবার import করলে নতুন version হিসেবে সংরক্ষণ হবে।',
+    hubImportSaved: 'সংরক্ষণ সফল হয়েছে।',
     hubImportDescription:
       'CivilOS Hub-এ প্রজেক্টের Integration ট্যাবে গিয়ে Estimating App-এর জন্য JSON export করুন, তারপর সেই ফাইল এখানে আপলোড করুন বা কপি করা টেক্সট পেস্ট করুন।',
     chooseFile: 'ফাইল বাছুন',
@@ -468,6 +513,48 @@ export const translations = {
   en: {
     // ── App shell / Auth ──────────────────────────────────────
     appName: 'CivilOS Estimating',
+    loginTagline: 'Estimating, Costing & BOQ',
+    loginFeatureBoq: 'Automated BOQ generation',
+    loginFeatureQuantity: 'Quantity takeoff',
+    loginFeatureRate: 'Rate analysis',
+    loginFeatureHub: 'Connected to Hub projects',
+    statusActive: 'Active',
+    statusOnHold: 'On hold',
+    statusCompleted: 'Completed',
+
+    // ── Sidebar navigation ──────────────────────────────────────
+    navDashboard: 'Dashboard',
+    navQuantityTakeoff: 'Quantity Takeoff',
+    navBoq: 'BOQ',
+    navRateAnalysis: 'Rate Analysis',
+    resourceRatesTab: 'Labour & Equipment Rates',
+    navMaterials: 'Materials',
+    navVendors: 'Vendors',
+    navProcurement: 'Procurement',
+    navReinforcement: 'BBS',
+    navBudget: 'Budget',
+    navTender: 'Tender',
+    navCostTracking: 'Cost Tracking',
+    navReports: 'Reports',
+    navIntegration: 'Integration',
+    switchProject: 'Switch project',
+    projectNotFound: 'Project not found',
+    noHubImportYetTitle: 'No data from Hub yet',
+    noHubImportYetBody: "This project's building and BNBC data hasn't been imported from Hub yet — go to the Integration tab to import it.",
+
+    // ── Project Selector page ─────────────────────────────────
+    yourProjects: 'Your Projects',
+    projectCountSuffix: 'projects',
+    searchProjectsPlaceholder: 'Search by name, client, or code...',
+    filterAll: 'All',
+    noProjectsFound: 'No projects found',
+    noProjectsYetTitle: 'No projects yet',
+    noProjectsYetBody: 'Create a project in CivilOS Hub — it will show up here automatically.',
+    openInHub: 'Open in Hub',
+    loadingProjects: 'Loading projects...',
+    projectsLoadError: "Couldn't load projects. Please try again.",
+    retry: 'Retry',
+
     signedInAs: 'Signed in as',
     role: 'role',
     unknownRole: 'unknown',
@@ -532,6 +619,9 @@ export const translations = {
 
     // ── HubImportPanel + QuantityImportPanel (shared import-panel pattern) ──
     hubImportTitle: 'Bring in project data from Hub',
+    hubImportFirstTimeHint: "No Hub import yet for this project — do your first import below.",
+    hubImportReimportHint: 'Data changed in Hub? Import again below to save it as a new version.',
+    hubImportSaved: 'Saved successfully.',
     hubImportDescription:
       "Go to the project's Integration tab in CivilOS Hub, export a JSON for the Estimating App, then upload that file here or paste the copied text.",
     chooseFile: 'Choose a file',

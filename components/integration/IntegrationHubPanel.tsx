@@ -121,7 +121,7 @@ export function IntegrationHubPanel({ projectId }: IntegrationHubPanelProps) {
           <ul className="space-y-2">
             {hubEvents.map((event: HubEvent) => (
               <li key={event.id} className="flex items-start gap-2 text-xs">
-                <span className="mt-0.5 shrink-0 text-[10px] font-semibold uppercase text-brand-700 bg-brand-50 border border-brand-200 rounded px-1.5 py-0.5">
+                <span className="mt-0.5 shrink-0 text-[10px] font-semibold uppercase text-brand-700 bg-brand-50 border border-brand-200 rounded-md px-1.5 py-0.5">
                   {event.sourceApp}
                 </span>
                 <div className="min-w-0">
