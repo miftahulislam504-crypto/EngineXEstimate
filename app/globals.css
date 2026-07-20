@@ -3,18 +3,18 @@
 
 /*
  * ==============================================================
- * Tailwind v4 migration (v3 → v4)
+ * Tailwind v4 migration (v3 -> v4)
  * ==============================================================
  * আগে এই ফাইলে @tailwind base/components/utilities + একটা আলাদা
- * tailwind.config.ts ছিল (brand-*/surface-*/text-*/status-* স্কেল)।
- * v4-এ config ফাইল নেই — সব টোকেন এখানে CSS custom property হিসেবে
+ * tailwind.config.ts ছিল (brand-* / surface-* / text-* / status-* স্কেল)।
+ * v4-এ config ফাইল নেই - সব টোকেন এখানে CSS custom property হিসেবে
  * @theme ব্লকে সংজ্ঞায়িত। পুরনো v3 config _migration-reference/
  * tailwind.config.ts.v3-backup-এ রাখা আছে রেফারেন্সের জন্য।
  *
- * রঙ পরিবর্তন: আগে brand-* ছিল নীল স্কেল (#2563eb ইত্যাদি) — এখন
+ * রঙ পরিবর্তন: আগে brand-* ছিল নীল স্কেল (#2563eb ইত্যাদি) - এখন
  * grayscale/oklch (PM app তথা CivilOS PM-এর সাথে মিলিয়ে, যেটাই
  * ecosystem-এর নতুন স্থায়ী সিদ্ধান্ত)। ক্লাস নাম (brand-50...900)
- * ইচ্ছাকৃতভাবে অপরিবর্তিত রাখা হয়েছে — শুধু মান বদলেছে, নাম না —
+ * ইচ্ছাকৃতভাবে অপরিবর্তিত রাখা হয়েছে - শুধু মান বদলেছে, নাম না -
  * যাতে .btn-primary, .nav-item-active ইত্যাদি কোনো component ফাইল
  * স্পর্শ না করেই নতুন রঙে switch হয়ে যায়।
  *
@@ -28,10 +28,10 @@
 :root {
   --radius: 0.625rem;
 
-  /* -- Brand scale (grayscale/oklch — PM app-এর সাথে মিলিয়ে) --
+  /* -- Brand scale (grayscale/oklch - PM app-এর সাথে মিলিয়ে) --
    * PM app-এর --primary: oklch(0.205 0 0) কেন্দ্র করে একটা পূর্ণ
-   * ৫০–৯০০ স্কেল বানানো হয়েছে (PM app নিজে শুধু primary/secondary
-   * রাখে, ৯-ধাপি স্কেল রাখে না — Estimating/Hub-এর brand-50 থেকে
+   * ৫০-৯০০ স্কেল বানানো হয়েছে (PM app নিজে শুধু primary/secondary
+   * রাখে, ৯-ধাপি স্কেল রাখে না - Estimating/Hub-এর brand-50 থেকে
    * brand-900 পর্যন্ত সব শেড দরকার হয় বলে এই সম্প্রসারণ)। lightness
    * PM-এর background/muted/foreground-এর সাথে সমানুপাতিক ধাপে। */
   --brand-50: oklch(0.985 0 0);
@@ -53,7 +53,7 @@
   --text-muted: oklch(0.556 0 0);
 
   /* -- Status colors (grayscale palette-এ ব্যাজ আলাদা করার জন্য
-   * সীমিত hue রাখা হয়েছে — সম্পূর্ণ grayscale করলে active/hold/done
+   * সীমিত hue রাখা হয়েছে - সম্পূর্ণ grayscale করলে active/hold/done
    * status আলাদা করা যেত না, যেটা ব্যবহারযোগ্যতার জন্য জরুরি। PM
    * app-এর --success/--warning/--destructive hue-এর সাথে সামঞ্জস্য
    * রেখে সবচেয়ে কম saturation ব্যবহার করা হয়েছে) -- */
@@ -67,7 +67,7 @@
   --status-doneBg: oklch(0.94 0 0);
   --status-doneBorder: oklch(0.8 0 0);
 
-  /* -- shadcn/ui semantic টোকেন (PM app parity — ভবিষ্যতে shadcn/ui
+  /* -- shadcn/ui semantic টোকেন (PM app parity - ভবিষ্যতে shadcn/ui
    * কম্পোনেন্ট যোগ হলে দরকার হবে) -- */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
