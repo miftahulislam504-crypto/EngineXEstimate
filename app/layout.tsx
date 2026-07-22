@@ -19,13 +19,13 @@ import AuthProvider from '@/components/providers/AuthProvider'
 // যোগ করা যাবে)।
 
 export const metadata: Metadata = {
-  title: { default: 'CivilOS Estimating', template: '%s | CivilOS Estimating' },
+  title: { default: 'EngineX Quanta', template: '%s | EngineX Quanta' },
   description: 'Estimating, Costing & BOQ — CivilOS Ecosystem',
   keywords: ['civil engineering', 'estimating', 'BOQ', 'BNBC', 'Bangladesh'],
 }
 
 export const viewport: Viewport = {
-  themeColor: '#1a1a1a', // grayscale brand-800-এর কাছাকাছি — আগে ছিল #2563eb (পুরনো নীল ব্র্যান্ড)
+  themeColor: '#4338CA', // EngineX Quanta ব্র্যান্ড ইন্ডিগো — নতুন লোগো গ্রেডিয়েন্টের শুরুর রঙ
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,

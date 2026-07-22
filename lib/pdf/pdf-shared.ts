@@ -38,7 +38,7 @@ declare module 'jspdf' {
   }
 }
 
-export const PDF_BRAND_COLOR: [number, number, number] = [21, 128, 61] // brand-700-এর কাছাকাছি সবুজ, globals.css টোকেনের সাথে সামঞ্জস্যপূর্ণ
+export const PDF_BRAND_COLOR: [number, number, number] = [67, 56, 202] // EngineX Quanta brand-700 ইন্ডিগো, globals.css টোকেনের সাথে সামঞ্জস্যপূর্ণ
 export const PDF_MUTED_COLOR: [number, number, number] = [107, 114, 128]
 
 export interface PdfReportMeta {
@@ -58,7 +58,7 @@ export function drawPdfHeader(doc: jsPDF, meta: PdfReportMeta): number {
 
   doc.setFontSize(9)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.text('CivilOS Estimating', 14, 12)
+  doc.text('EngineX Quanta', 14, 12)
 
   doc.setFontSize(16)
   doc.setTextColor(20, 20, 20)
@@ -97,7 +97,7 @@ export function drawPdfFooter(doc: jsPDF): void {
     doc.setFontSize(8)
     doc.setTextColor(...PDF_MUTED_COLOR)
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' })
-    doc.text('CivilOS Estimating — Auto-generated report', 14, pageHeight - 8)
+    doc.text('EngineX Quanta — Auto-generated report', 14, pageHeight - 8)
   }
 }
 

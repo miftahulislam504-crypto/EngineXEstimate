@@ -28,20 +28,22 @@
 :root {
   --radius: 0.625rem;
 
-  /* -- Brand scale (grayscale/oklch - PM app-এর সাথে মিলিয়ে) --
-   * PM app-এর --primary: oklch(0.205 0 0) কেন্দ্র করে একটা পূর্ণ
-   * ৫০-৯০০ স্কেল বানানো হয়েছে (PM app নিজে শুধু primary/secondary
-   * রাখে, ৯-ধাপি স্কেল রাখে না - Estimating/Hub-এর brand-50 থেকে
-   * brand-900 পর্যন্ত সব শেড দরকার হয় বলে এই সম্প্রসারণ)। lightness
-   * PM-এর background/muted/foreground-এর সাথে সমানুপাতিক ধাপে। */
-  --brand-50: oklch(0.985 0 0);
-  --brand-100: oklch(0.97 0 0);
-  --brand-200: oklch(0.922 0 0);
-  --brand-500: oklch(0.556 0 0);
-  --brand-600: oklch(0.435 0 0);
-  --brand-700: oklch(0.32 0 0);
-  --brand-800: oklch(0.205 0 0);
-  --brand-900: oklch(0.145 0 0);
+  /* -- Brand scale (EngineX Quanta — ইন্ডিগো) --
+   * রিব্র্যান্ডিং: CivilOS Estimating → EngineX Quanta। আগের
+   * grayscale/oklch স্কেল (PM app-এর সাথে মেলানো) সরিয়ে নতুন লোগোর
+   * ইন্ডিগো→স্কাই গ্রেডিয়েন্টের সাথে সামঞ্জস্যপূর্ণ একটা hue-যুক্ত
+   * স্কেল বসানো হলো, যাতে বাটন/অ্যাক্টিভ-ন্যাভ/ফোকাস-রিং ইত্যাদি
+   * সব জায়গায় ব্র্যান্ড রঙ দেখা যায় (আগে পুরো UI grayscale ছিল
+   * বলে ব্র্যান্ড আইডেন্টিটি চোখে পড়ত না)। ক্লাস নাম অপরিবর্তিত
+   * (brand-50...900), শুধু মান বদলেছে। */
+  --brand-50: oklch(0.97 0.014 275);
+  --brand-100: oklch(0.93 0.03 275);
+  --brand-200: oklch(0.87 0.06 275);
+  --brand-500: oklch(0.58 0.19 275);
+  --brand-600: oklch(0.48 0.19 275);
+  --brand-700: oklch(0.40 0.17 275);
+  --brand-800: oklch(0.32 0.14 275);
+  --brand-900: oklch(0.24 0.1 275);
 
   /* -- Surface / text (PM app-এর background/card/foreground/muted থেকে) -- */
   --surface: oklch(0.985 0 0);

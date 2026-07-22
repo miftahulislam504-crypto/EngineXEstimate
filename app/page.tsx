@@ -19,12 +19,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
-import { Loader2, Search, FolderOpen, ChevronRight, ExternalLink, AlertCircle } from 'lucide-react'
+import { Loader2, Search, FolderOpen, ChevronRight, ExternalLink, AlertCircle, MapPin, Building2 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { useLang } from '@/components/providers/LanguageProvider'
 import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
+import { LogoWithName } from '@/components/brand/Logo'
 import { Project, ProjectStatus } from '@/lib/types/project.types'
 import { formatDate, getStatusBadgeClass, getStatusBarColor, getStatusLabelKey } from '@/lib/utils'
 
@@ -78,12 +78,7 @@ export default function ProjectSelectorPage() {
     <main className="min-h-screen bg-surface">
       {/* Topbar */}
       <header className="bg-surface-card border-b border-surface-border px-4 lg:px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
-            <Image src="/logo.png" alt="CivilOS" width={20} height={20} className="object-contain brightness-0 invert" priority />
-          </div>
-          <span className="font-bold text-sm text-text-primary">{t('appName')}</span>
-        </div>
+        <LogoWithName />
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
           <button className="btn-ghost" onClick={() => signOut()}>
@@ -169,36 +164,51 @@ export default function ProjectSelectorPage() {
             <p className="text-text-secondary font-medium text-sm">{t('noProjectsFound')}</p>
           </div>
         ) : (
-          <div className="card overflow-hidden">
-            <div className="hidden sm:grid grid-cols-[1fr_140px_100px_36px] gap-4 px-5 py-2.5 bg-surface border-b border-surface-border">
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">{t('yourProjects')}</span>
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Client</span>
-              <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">{t('filterAll')}</span>
-              <span />
-            </div>
-            <div>
-              {filtered.map((p: Project) => (
-                <Link key={p.id} href={`/project/${p.id}/dashboard`} className="table-row group">
-                  <div className={`w-0.5 h-10 rounded-full flex-shrink-0 ${getStatusBarColor(p.status)}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-text-primary text-sm truncate">{p.projectName}</span>
-                      <span className="text-xs font-mono text-text-muted bg-surface px-1.5 py-0.5 rounded-md hidden sm:inline">
-                        {p.projectCode}
-                      </span>
-                    </div>
-                    <div className="text-xs text-text-muted truncate mt-0.5">
-                      {p.location} · {formatDate(p.startDate, lang)}
-                    </div>
-                  </div>
-                  <div className="hidden sm:block text-sm text-text-secondary truncate w-[140px]">{p.clientName}</div>
-                  <div className="flex-shrink-0">
+          // আগে এখানে একটা সরু single-column table-row লিস্ট ছিল
+          // (শুধু একটা রঙিন 2px বার দিয়ে status বোঝানো হতো) — কার্ড
+          // বলে মনে হতো না, দেখতেও সাদামাটা ছিল। এখন প্রকৃত grid of
+          // cards: উপরে একটা status-রঙা হেডার স্ট্রাইপ, বড় প্রজেক্ট
+          // নাম, client/location/date মেটা আইকনসহ, আর হোভারে lift +
+          // border হাইলাইট।
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((p: Project) => (
+              <Link
+                key={p.id}
+                href={`/project/${p.id}/dashboard`}
+                className="group card overflow-hidden hover:shadow-lg hover:-translate-y-0.5 hover:border-brand-200 transition-all duration-150"
+              >
+                <div className={`h-1.5 w-full ${getStatusBarColor(p.status)}`} />
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-2 mb-3">
                     <span className={getStatusBadgeClass(p.status)}>{t(getStatusLabelKey(p.status))}</span>
+                    <span className="text-[11px] font-mono text-text-muted bg-surface px-1.5 py-0.5 rounded-md flex-shrink-0">
+                      {p.projectCode}
+                    </span>
                   </div>
-                  <ChevronRight size={15} className="text-text-muted flex-shrink-0" />
-                </Link>
-              ))}
-            </div>
+
+                  <h3 className="font-bold text-text-primary text-[15px] leading-snug mb-1 group-hover:text-brand-700 transition-colors line-clamp-2">
+                    {p.projectName}
+                  </h3>
+
+                  <div className="flex items-center gap-1.5 text-xs text-text-secondary mb-1 truncate">
+                    <Building2 size={13} className="text-text-muted flex-shrink-0" />
+                    <span className="truncate">{p.clientName}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-text-muted truncate">
+                    <MapPin size={13} className="flex-shrink-0" />
+                    <span className="truncate">{p.location}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-surface-border">
+                    <span className="text-[11px] text-text-muted">{formatDate(p.startDate, lang)}</span>
+                    <span className="flex items-center gap-0.5 text-xs font-semibold text-brand-600 group-hover:gap-1.5 transition-all">
+                      {t('navDashboard')}
+                      <ChevronRight size={14} />
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
         )}
       </div>

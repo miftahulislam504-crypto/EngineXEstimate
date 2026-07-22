@@ -26,7 +26,7 @@ export type Lang = 'en' | 'bn'
 export const translations = {
   bn: {
     // ── App shell / Auth ──────────────────────────────────────
-    appName: 'CivilOS Estimating',
+    appName: 'EngineX Quanta',
     loginTagline: 'ইস্টিমেটিং, কস্টিং ও বিওকিউ',
     loginFeatureBoq: 'স্বয়ংক্রিয় BOQ তৈরি',
     loginFeatureQuantity: 'কোয়ান্টিটি টেকঅফ',
@@ -512,7 +512,7 @@ export const translations = {
   },
   en: {
     // ── App shell / Auth ──────────────────────────────────────
-    appName: 'CivilOS Estimating',
+    appName: 'EngineX Quanta',
     loginTagline: 'Estimating, Costing & BOQ',
     loginFeatureBoq: 'Automated BOQ generation',
     loginFeatureQuantity: 'Quantity takeoff',

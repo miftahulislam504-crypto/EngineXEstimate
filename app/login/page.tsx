@@ -13,12 +13,12 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useLang } from '@/components/providers/LanguageProvider'
 import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
 import { SignInForm } from '@/components/auth/SignInForm'
+import { LogoWithName } from '@/components/brand/Logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -42,12 +42,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-surface flex flex-col">
       <header className="px-4 lg:px-8 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
-            <Image src="/logo.png" alt="CivilOS" width={20} height={20} className="object-contain brightness-0 invert" priority />
-          </div>
-          <span className="font-bold text-sm text-text-primary">{t('appName')}</span>
-        </div>
+        <LogoWithName size={30} />
         <LanguageSwitcher />
       </header>
 

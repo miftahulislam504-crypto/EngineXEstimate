@@ -102,7 +102,7 @@ export const CONNECTION_REGISTRY: ConnectionPoint[] = [
     id: 'estimating-to-budget-boq',
     label: 'Estimating → Budget: BOQ (with rates)',
     direction: 'downstream',
-    counterpartApp: 'CivilOS Estimating (নিজস্ব — Module 3 → Module 10 আন্তঃ-app না, আন্তঃ-Module)',
+    counterpartApp: 'EngineX Quanta (নিজস্ব — Module 3 → Module 10 আন্তঃ-app না, আন্তঃ-Module)',
     dataDescription: 'BOQ items + Rate Analysis দিয়ে গণনাকৃত মোট cost — Module 10 (Budget)-এর planned amount নির্ধারণে ইনপুট',
     firestorePath: 'projects/{projectId}/estimatingInput/boqVersions/{versionId} + activeBOQVersion',
     isPathConfirmed: true, // এটা একই app-এর ভেতরে (Module 3 → Module 10), তাই "confirmed" — অন্য app-এর সাথে সমন্বয়ের দরকার নেই

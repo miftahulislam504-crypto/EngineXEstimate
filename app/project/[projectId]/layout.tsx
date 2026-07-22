@@ -19,12 +19,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname, useParams } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { Menu, X, LogOut, ChevronLeft, Loader2, ChevronRight } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useProjectStore } from '@/store/useProjectStore'
 import { useLang } from '@/components/providers/LanguageProvider'
 import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
+import { LogoMark } from '@/components/brand/Logo'
 import { ESTIMATING_MODULES } from '@/lib/modules'
 import { getStatusBadgeClass, getStatusLabelKey } from '@/lib/utils'
 
@@ -81,8 +81,8 @@ export default function ProjectWorkspaceLayout({ children }: { children: React.R
       >
         {/* লোগো + প্রজেক্ট বদলানোর লিংক */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-surface-border">
-          <Link href="/" className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center flex-shrink-0">
-            <Image src="/logo.png" alt="CivilOS" width={20} height={20} className="object-contain brightness-0 invert" priority />
+          <Link href="/" className="flex-shrink-0">
+            <LogoMark size={32} />
           </Link>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-text-primary leading-tight truncate">
