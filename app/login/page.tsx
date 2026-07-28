@@ -26,9 +26,11 @@ export default function LoginPage() {
   const { t } = useLang()
 
   // ইতিমধ্যে লগইন করা থাকলে সরাসরি প্রজেক্ট সিলেক্টরে পাঠিয়ে দেওয়া —
-  // app/page.tsx এর বিপরীত দিকের guard
+  // app/projects/page.tsx এর বিপরীত দিকের guard। রুট (/) এখন landing
+  // page, প্রজেক্ট সিলেক্টর /projects এ সরে যাওয়ার পর এই redirect-ও
+  // সেই অনুযায়ী বদলানো হলো।
   useEffect(() => {
-    if (initialized && user) router.replace('/')
+    if (initialized && user) router.replace('/projects')
   }, [user, initialized, router])
 
   if (!initialized || (initialized && user)) {

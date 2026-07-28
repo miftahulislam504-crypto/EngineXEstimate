@@ -1,60 +1,70 @@
-// app/page.tsx — Project Selector
+// app/page.tsx — Landing / Summary page
 //
-// আগে এই পেজটাই ছিল Phase 0 smoke test (login + সব ১৫টা module
-// একসাথে stack করা)। পুরনো সংস্করণ app/page.tsx.phase0-backup-এ
-// রাখা হয়েছে module migration-এর সময় reference-এর জন্য, পরে মুছে
-// ফেলা হবে। এখন এটা root landing: লগইনের পর ব্যবহারকারীর প্রজেক্ট
-// list — কার্ডে ক্লিক করলে /project/[projectId]/dashboard এ ঢোকে।
-// Login ফর্ম নিজের /login route-এ সরে গেছে; সব module নিজের
-// /project/[projectId]/{module} route-এ সরছে (পরের ধাপে)।
+// রুট route (/) আগে ছিল Project Selector — সেটা এখন app/projects/
+// page.tsx-এ সরে গেছে। এই পেজ নতুন: লগইনের আগে পুরো অ্যাপের একটা
+// সারসংক্ষেপ — কী কী module/ফাংশন আছে তা এক নজরে দেখানো, তারপর
+// "Let's Start" চাপলে /login এ যাওয়া। ফ্লো: landing (/) → login
+// (/login) → project selector (/projects) → workspace
+// (/project/[projectId]/dashboard)।
 //
-// Hub-এর app/dashboard/projects/page.tsx-এর টেবিল/সার্চ/ফিল্টার UI
-// থেকে গঠন ধার করা হয়েছে, কিন্তু write action (delete, status
-// change) বাদ — Estimating প্রজেক্ট তৈরি/সম্পাদনা/মুছা করে না, সেটা
-// Hub-এর দায়িত্ব (lib/firestore/project.firestore.ts-এর কমেন্টে
-// বিস্তারিত কারণ)।
+// ইতিমধ্যে লগইন করা থাকলে সরাসরি /projects এ পাঠিয়ে দেওয়া হয় —
+// login page-এর বিপরীত guard-এর মতোই, যাতে লগইন করা ব্যবহারকারী
+// প্রতিবার landing marketing page দেখতে বাধ্য না হন।
+//
+// Module তালিকা lib/modules.ts (ESTIMATING_MODULES) থেকে সরাসরি
+// আসে — একই icon/order/moduleNumber যা sidebar-এ ব্যবহৃত হয়, যাতে
+// landing page আর workspace sidebar কখনো একে অপরের থেকে out-of-sync
+// না হয়ে যায়।
+//
+// Signature layout element: মডিউল লিস্টটা card-grid না, বরং একটা
+// BOQ লাইন-আইটেম লেজারের মতো নম্বরওয়ালা সারি — কারণ এই প্রোডাক্টের
+// আসল বিষয়বস্তুই BOQ/লেজার-স্টাইল হিসাব, আর মডিউলগুলো সত্যিই
+// numbered (moduleNumber ফিল্ড আগে থেকেই ডেটাতে আছে)।
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Loader2, Search, FolderOpen, ChevronRight, ExternalLink, AlertCircle, MapPin, Building2 } from 'lucide-react'
+import { ArrowRight, Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useProjectStore } from '@/store/useProjectStore'
 import { useLang } from '@/components/providers/LanguageProvider'
 import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
 import { LogoWithName } from '@/components/brand/Logo'
-import { Project, ProjectStatus } from '@/lib/types/project.types'
-import { formatDate, getStatusBadgeClass, getStatusBarColor, getStatusLabelKey } from '@/lib/utils'
+import { ESTIMATING_MODULES } from '@/lib/modules'
+import type { TranslationKey } from '@/lib/i18n'
 
-const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL ?? 'https://enginex-hub.vercel.app'
+// mod.sidebarLabelKey (যেমন 'navQuantityTakeoff') থেকে descriptionKey
+// (যেমন 'landingModQuantityTakeoffDesc') বানানোর ম্যাপ — dynamic
+// string concat-এর বদলে explicit map রাখা হলো যাতে TypeScript পুরো
+// path-টা টাইপ-চেক করতে পারে, কোনো @ts-expect-error ছাড়াই।
+const MODULE_DESC_KEY: Record<string, TranslationKey> = {
+  navDashboard: 'landingModDashboardDesc',
+  navQuantityTakeoff: 'landingModQuantityTakeoffDesc',
+  navBoq: 'landingModBoqDesc',
+  navRateAnalysis: 'landingModRateAnalysisDesc',
+  navMaterials: 'landingModMaterialsDesc',
+  navVendors: 'landingModVendorsDesc',
+  navProcurement: 'landingModProcurementDesc',
+  navReinforcement: 'landingModReinforcementDesc',
+  navBudget: 'landingModBudgetDesc',
+  navTender: 'landingModTenderDesc',
+  navCostTracking: 'landingModCostTrackingDesc',
+  navReports: 'landingModReportsDesc',
+  navIntegration: 'landingModIntegrationDesc',
+}
 
-const STATUS_FILTERS: { value: ProjectStatus | ''; labelKey: 'filterAll' | 'statusActive' | 'statusOnHold' | 'statusCompleted' }[] = [
-  { value: '', labelKey: 'filterAll' },
-  { value: 'active', labelKey: 'statusActive' },
-  { value: 'on_hold', labelKey: 'statusOnHold' },
-  { value: 'completed', labelKey: 'statusCompleted' },
-]
-
-export default function ProjectSelectorPage() {
+export default function LandingPage() {
   const router = useRouter()
-  const { user, initialized, signOut } = useAuthStore()
-  const { projects, loading, error, fetchProjects } = useProjectStore()
-  const { t, lang } = useLang()
+  const { user, initialized } = useAuthStore()
+  const { t } = useLang()
 
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<ProjectStatus | ''>('')
-
+  // লগইন করা থাকলে landing page না দেখিয়ে সরাসরি project selector-এ
   useEffect(() => {
-    if (initialized && !user) router.replace('/login')
+    if (initialized && user) router.replace('/projects')
   }, [user, initialized, router])
 
-  useEffect(() => {
-    if (user) fetchProjects(user.uid)
-  }, [user, fetchProjects])
-
-  if (!initialized || (initialized && !user)) {
+  if (!initialized || (initialized && user)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface">
         <Loader2 className="animate-spin text-brand-600" size={32} />
@@ -62,156 +72,149 @@ export default function ProjectSelectorPage() {
     )
   }
 
-  const q = search.toLowerCase().trim()
-  const filtered = projects.filter((p) => {
-    const matchFilter = !filter || p.status === filter
-    const matchSearch =
-      !q ||
-      p.projectName.toLowerCase().includes(q) ||
-      p.clientName.toLowerCase().includes(q) ||
-      p.location.toLowerCase().includes(q) ||
-      p.projectCode.toLowerCase().includes(q)
-    return matchFilter && matchSearch
-  })
-
   return (
     <main className="min-h-screen bg-surface">
       {/* Topbar */}
-      <header className="bg-surface-card border-b border-surface-border px-4 lg:px-8 py-4 flex items-center justify-between">
-        <LogoWithName />
-        <div className="flex items-center gap-2">
+      <header className="px-4 lg:px-8 py-4 flex items-center justify-between max-w-6xl mx-auto">
+        <LogoWithName size={30} />
+        <div className="flex items-center gap-3">
           <LanguageSwitcher />
-          <button className="btn-ghost" onClick={() => signOut()}>
-            {t('signOut')}
-          </button>
+          <Link href="/login" className="btn-ghost text-sm">
+            {t('landingSecondaryCta')}
+          </Link>
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-bold text-text-primary">{t('yourProjects')}</h1>
-            <p className="text-sm text-text-muted mt-0.5">
-              {projects.length} {t('projectCountSuffix')}
-            </p>
-          </div>
-          <a href={HUB_URL} target="_blank" rel="noopener noreferrer" className="btn-outline">
-            <ExternalLink size={15} />
-            {t('openInHub')}
-          </a>
-        </div>
+      {/* ── Hero ─────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden">
+        {/* গ্রাফ-পেপার / ব্লুপ্রিন্ট গ্রিড টেক্সচার — খুবই হালকা, subject-এর
+            নিজস্ব world (engineering drawing sheet) থেকে নেওয়া মোটিফ */}
+        <div
+          className="absolute inset-0 opacity-[0.4] pointer-events-none"
+          style={{
+            backgroundImage:
+              'linear-gradient(var(--surface-border) 1px, transparent 1px), linear-gradient(90deg, var(--surface-border) 1px, transparent 1px)',
+            backgroundSize: '32px 32px',
+            maskImage: 'radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 80% 60% at 50% 20%, black 40%, transparent 90%)',
+          }}
+        />
 
-        {/* সার্চ + ফিল্টার — প্রজেক্ট থাকলেই শুধু দেখানো, খালি হলে দরকার নেই */}
-        {projects.length > 0 && (
-          <div className="card p-4 mb-5">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('searchProjectsPlaceholder')}
-                  className="input-field pl-9"
-                />
-              </div>
-              <div className="flex gap-1.5 flex-wrap">
-                {STATUS_FILTERS.map((f) => (
-                  <button
-                    key={f.value}
-                    onClick={() => setFilter(f.value)}
-                    className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
-                      filter === f.value
-                        ? 'bg-brand-600 text-white border-brand-600'
-                        : 'bg-white text-text-secondary border-surface-border hover:border-brand-300'
-                    }`}
-                  >
-                    {t(f.labelKey)}
-                  </button>
-                ))}
-              </div>
+        <div className="relative max-w-4xl mx-auto px-4 lg:px-8 pt-14 pb-16 text-center">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 border border-brand-100 px-3 py-1 rounded-full mb-6">
+            {t('landingEyebrow')}
+          </span>
+
+          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-text-primary tracking-tight leading-[1.15] mb-4 text-balance">
+            {t('landingHeroTitle')}
+          </h1>
+
+          <p className="text-base text-text-secondary max-w-xl mx-auto mb-8 leading-relaxed">
+            {t('landingHeroSubtitle')}
+          </p>
+
+          <Link href="/login" className="btn-primary text-base px-6 py-3 inline-flex">
+            {t('landingCta')}
+            <ArrowRight size={18} />
+          </Link>
+
+          {/* সংক্ষিপ্ত stat strip — ledger-এর মতো তিনটা সংখ্যা, প্রতিটার
+              নিচে একটা thin rule, ফাইন্যান্সিয়াল সামারি লাইনের ইঙ্গিত */}
+          <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto mt-14 pt-6 border-t border-surface-border">
+            <div>
+              <div className="text-2xl font-bold text-text-primary font-mono">13</div>
+              <div className="text-xs text-text-muted mt-0.5">{t('landingStatModules')}</div>
+            </div>
+            <div className="border-x border-surface-border">
+              <div className="text-2xl font-bold text-text-primary font-mono">6</div>
+              <div className="text-xs text-text-muted mt-0.5">{t('landingStatEcosystem')}</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-text-primary font-mono">1</div>
+              <div className="text-xs text-text-muted mt-0.5">{t('landingStatWorkflow')}</div>
             </div>
           </div>
-        )}
+        </div>
+      </section>
 
-        {/* Content states */}
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-2">
-            <Loader2 className="animate-spin text-brand-600" size={28} />
-            <p className="text-sm text-text-muted">{t('loadingProjects')}</p>
-          </div>
-        ) : error ? (
-          <div className="card py-12 text-center">
-            <AlertCircle size={32} className="text-red-500 mx-auto mb-3" />
-            <p className="text-sm text-text-secondary mb-4">{t('projectsLoadError')}</p>
-            <button className="btn-outline" onClick={() => user && fetchProjects(user.uid)}>
-              {t('retry')}
-            </button>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="card py-16 text-center px-6">
-            <FolderOpen size={40} className="text-text-muted mx-auto mb-3 opacity-30" />
-            <p className="text-text-secondary font-medium text-sm mb-1">{t('noProjectsYetTitle')}</p>
-            <p className="text-text-muted text-sm max-w-sm mx-auto mb-4">{t('noProjectsYetBody')}</p>
-            <a href={HUB_URL} target="_blank" rel="noopener noreferrer" className="btn-primary inline-flex text-sm">
-              <ExternalLink size={15} />
-              {t('openInHub')}
-            </a>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="card py-16 text-center">
-            <FolderOpen size={40} className="text-text-muted mx-auto mb-3 opacity-30" />
-            <p className="text-text-secondary font-medium text-sm">{t('noProjectsFound')}</p>
-          </div>
-        ) : (
-          // আগে এখানে একটা সরু single-column table-row লিস্ট ছিল
-          // (শুধু একটা রঙিন 2px বার দিয়ে status বোঝানো হতো) — কার্ড
-          // বলে মনে হতো না, দেখতেও সাদামাটা ছিল। এখন প্রকৃত grid of
-          // cards: উপরে একটা status-রঙা হেডার স্ট্রাইপ, বড় প্রজেক্ট
-          // নাম, client/location/date মেটা আইকনসহ, আর হোভারে lift +
-          // border হাইলাইট।
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((p: Project) => (
-              <Link
-                key={p.id}
-                href={`/project/${p.id}/dashboard`}
-                className="group card overflow-hidden hover:shadow-lg hover:-translate-y-0.5 hover:border-brand-200 transition-all duration-150"
+      {/* ── Module ledger ────────────────────────────────────── */}
+      <section className="max-w-3xl mx-auto px-4 lg:px-8 py-14">
+        <div className="mb-8">
+          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">
+            {t('landingModulesEyebrow')}
+          </span>
+          <h2 className="text-2xl font-bold text-text-primary tracking-tight mt-1.5 mb-2">
+            {t('landingModulesTitle')}
+          </h2>
+          <p className="text-sm text-text-muted">{t('landingModulesSubtitle')}</p>
+        </div>
+
+        {/* BOQ-লাইন-আইটেম-স্টাইল লেজার — প্রতিটা সারিতে নম্বর, আইকন,
+            module নাম আর এক লাইনের বর্ণনা। card-grid না বেছে এটা
+            বেছে নেওয়ার কারণ: প্রোডাক্টের আসল ডেটা structure-ই এমন
+            (moduleNumber যা lib/modules.ts-এ আগে থেকেই আছে)। */}
+        <div className="card overflow-hidden">
+          {ESTIMATING_MODULES.map((mod, i) => {
+            const Icon = mod.icon
+            const descKey = MODULE_DESC_KEY[mod.sidebarLabelKey]
+            return (
+              <div
+                key={mod.path}
+                className={`flex items-start sm:items-center gap-4 px-4 sm:px-5 py-4 ${
+                  i !== ESTIMATING_MODULES.length - 1 ? 'border-b border-surface-border' : ''
+                }`}
               >
-                <div className={`h-1.5 w-full ${getStatusBarColor(p.status)}`} />
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <span className={getStatusBadgeClass(p.status)}>{t(getStatusLabelKey(p.status))}</span>
-                    <span className="text-[11px] font-mono text-text-muted bg-surface px-1.5 py-0.5 rounded-md flex-shrink-0">
-                      {p.projectCode}
-                    </span>
-                  </div>
-
-                  <h3 className="font-bold text-text-primary text-[15px] leading-snug mb-1 group-hover:text-brand-700 transition-colors line-clamp-2">
-                    {p.projectName}
-                  </h3>
-
-                  <div className="flex items-center gap-1.5 text-xs text-text-secondary mb-1 truncate">
-                    <Building2 size={13} className="text-text-muted flex-shrink-0" />
-                    <span className="truncate">{p.clientName}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-text-muted truncate">
-                    <MapPin size={13} className="flex-shrink-0" />
-                    <span className="truncate">{p.location}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-surface-border">
-                    <span className="text-[11px] text-text-muted">{formatDate(p.startDate, lang)}</span>
-                    <span className="flex items-center gap-0.5 text-xs font-semibold text-brand-600 group-hover:gap-1.5 transition-all">
-                      {t('navDashboard')}
-                      <ChevronRight size={14} />
-                    </span>
+                <span className="text-xs font-mono text-text-muted w-6 flex-shrink-0 pt-0.5 sm:pt-0">
+                  {String(mod.moduleNumber).padStart(2, '0')}
+                </span>
+                <span className="w-8 h-8 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 flex-shrink-0">
+                  <Icon size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-3">
+                    <h3 className="text-sm font-semibold text-text-primary flex-shrink-0">
+                      {t(mod.sidebarLabelKey)}
+                    </h3>
+                    <p className="text-xs text-text-muted leading-relaxed sm:truncate">{t(descKey)}</p>
                   </div>
                 </div>
-              </Link>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* ── CivilOS ecosystem ────────────────────────────────── */}
+      <section className="max-w-4xl mx-auto px-4 lg:px-8 py-14">
+        <div className="card p-6 sm:p-10">
+          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">
+            {t('landingEcosystemEyebrow')}
+          </span>
+          <h2 className="text-2xl font-bold text-text-primary tracking-tight mt-1.5 mb-4 text-balance">
+            {t('landingEcosystemTitle')}
+          </h2>
+          <p className="text-sm text-text-secondary leading-relaxed max-w-2xl mb-6">
+            {t('landingEcosystemBody')}
+          </p>
+
+          <div className="space-y-2.5">
+            {(['landingEcosystemPoint1', 'landingEcosystemPoint2', 'landingEcosystemPoint3'] as const).map((key) => (
+              <div key={key} className="flex items-center gap-2.5 text-sm text-text-secondary">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />
+                {t(key)}
+              </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      </section>
+
+      {/* ── Closing CTA ──────────────────────────────────────── */}
+      <section className="max-w-4xl mx-auto px-4 lg:px-8 pb-20 text-center">
+        <Link href="/login" className="btn-primary text-base px-6 py-3 inline-flex">
+          {t('landingCta')}
+          <ArrowRight size={18} />
+        </Link>
+      </section>
     </main>
   )
 }

@@ -36,6 +36,43 @@ export const translations = {
     statusOnHold: 'বিরতি',
     statusCompleted: 'সম্পন্ন',
 
+    // ── Landing page (root route) ─────────────────────────────
+    landingEyebrow: 'CivilOS ইকোসিস্টেম · এস্টিমেটিং মডিউল',
+    landingHeroTitle: 'টেকঅফ থেকে টেন্ডার, এক জায়গায় হিসাব',
+    landingHeroSubtitle:
+      'কোয়ান্টিটি টেকঅফ দিয়ে শুরু, BOQ আর রেট অ্যানালাইসিস হয়ে বাজেট-কস্ট ট্র্যাকিং-টেন্ডার পর্যন্ত — পুরো এস্টিমেটিং ওয়ার্কফ্লো একটা ড্যাশবোর্ডে।',
+    landingCta: "Let's Start",
+    landingSecondaryCta: 'ইতিমধ্যে একাউন্ট আছে?',
+    landingStatModules: 'টা মডিউল',
+    landingStatEcosystem: 'CivilOS অ্যাপের সাথে সংযুক্ত',
+    landingStatWorkflow: 'টেকঅফ → টেন্ডার একই জায়গায়',
+
+    landingModulesEyebrow: 'যা যা করা যাবে',
+    landingModulesTitle: 'একটা প্রজেক্টে সব ১৩টা মডিউল',
+    landingModulesSubtitle: 'Hub থেকে প্রজেক্ট বেছে নিন — নিচের প্রতিটা মডিউল সেই প্রজেক্টের জন্য প্রস্তুত থাকবে।',
+
+    landingModDashboardDesc: 'প্রজেক্টের সারসংক্ষেপ — অগ্রগতি, বাজেট, সাম্প্রতিক কার্যক্রম এক নজরে।',
+    landingModQuantityTakeoffDesc: 'ড্রয়িং থেকে কোয়ান্টিটি বের করুন — ম্যানুয়াল হিসাবের বদলে কাঠামোবদ্ধ টেকঅফ শিট।',
+    landingModBoqDesc: 'টেকঅফ থেকে সরাসরি Bill of Quantities তৈরি — আইটেম, ইউনিট, পরিমাণ সব একসাথে।',
+    landingModRateAnalysisDesc: 'প্রতিটা আইটেমের রেট ভেঙে দেখুন — লেবার, ম্যাটেরিয়াল, ইকুইপমেন্ট রেট আলাদা করে।',
+    landingModMaterialsDesc: 'ম্যাটেরিয়াল তালিকা, চাহিদা আর সরবরাহ এক জায়গায় ট্র্যাক করুন।',
+    landingModVendorsDesc: 'ভেন্ডর তালিকা, কোটেশন আর যোগাযোগ তথ্য গুছিয়ে রাখুন।',
+    landingModProcurementDesc: 'পারচেজ অর্ডার থেকে ডেলিভারি পর্যন্ত প্রকিউরমেন্ট প্রক্রিয়া অনুসরণ করুন।',
+    landingModReinforcementDesc: 'BBS (Bar Bending Schedule) তৈরি করুন — রড কাটিং, বেন্ডিং হিসাব সহ।',
+    landingModBudgetDesc: 'প্রজেক্ট বাজেট ঠিক করুন আর সময়ের সাথে খরচের সাথে তুলনা করুন।',
+    landingModTenderDesc: 'টেন্ডার ডকুমেন্ট প্রস্তুত ও ব্যবস্থাপনা করুন।',
+    landingModCostTrackingDesc: 'দৈনিক-সাপ্তাহিক খরচ ট্র্যাক করুন, বাজেটের সাথে মিলিয়ে দেখুন।',
+    landingModReportsDesc: 'BOQ, কস্ট, ম্যাটেরিয়াল, BBS রিপোর্ট PDF আকারে বের করুন।',
+    landingModIntegrationDesc: 'CivilOS Hub থেকে বিল্ডিং ও BNBC ডেটা import করুন।',
+
+    landingEcosystemEyebrow: 'CivilOS ইকোসিস্টেম',
+    landingEcosystemTitle: 'প্রজেক্ট তৈরি হয় Hub-এ, হিসাব হয় এখানে',
+    landingEcosystemBody:
+      'EngineX Quanta একা দাঁড়িয়ে থাকা অ্যাপ না — এটা CivilOS ইকোসিস্টেমের এস্টিমেটিং মডিউল। প্রজেক্ট তৈরি, টিম ম্যানেজমেন্ট, বিল্ডিং তথ্য — সব হয় Hub-এ। আপনি শুধু Hub-এ থাকা প্রজেক্ট থেকে বেছে নিয়ে এখানে টেকঅফ, BOQ, বাজেট আর টেন্ডারের কাজ করবেন। একই একাউন্ট, একই প্রজেক্ট ডেটা — দুই জায়গায় আলাদা করে কিছু বানাতে হয় না।',
+    landingEcosystemPoint1: 'Hub-এ প্রজেক্ট তৈরি করুন, এখানে স্বয়ংক্রিয়ভাবে দেখা যাবে',
+    landingEcosystemPoint2: 'একই লগইন — Hub আর Quanta দুটোতেই কাজ করবে',
+    landingEcosystemPoint3: 'বিল্ডিং ও BNBC ডেটা Hub থেকে সরাসরি import',
+
     // ── Sidebar navigation (সংক্ষিপ্ত label, panel heading থেকে আলাদা) ──
     navDashboard: 'ড্যাশবোর্ড',
     navQuantityTakeoff: 'কোয়ান্টিটি টেকঅফ',
@@ -521,6 +558,43 @@ export const translations = {
     statusActive: 'Active',
     statusOnHold: 'On hold',
     statusCompleted: 'Completed',
+
+    // ── Landing page (root route) ─────────────────────────────
+    landingEyebrow: 'CivilOS Ecosystem · Estimating Module',
+    landingHeroTitle: 'From takeoff to tender, one running ledger',
+    landingHeroSubtitle:
+      'Start with quantity takeoff, move through BOQ and rate analysis, and carry it all the way to budget, cost tracking, and tender — one dashboard for the whole estimating workflow.',
+    landingCta: "Let's Start",
+    landingSecondaryCta: 'Already have an account?',
+    landingStatModules: 'modules',
+    landingStatEcosystem: 'connected CivilOS apps',
+    landingStatWorkflow: 'takeoff → tender in one place',
+
+    landingModulesEyebrow: 'What you can do',
+    landingModulesTitle: 'All 13 modules, one project',
+    landingModulesSubtitle: 'Pick a project from Hub — every module below is ready and waiting for it.',
+
+    landingModDashboardDesc: 'A project overview — progress, budget, and recent activity at a glance.',
+    landingModQuantityTakeoffDesc: 'Pull quantities straight from drawings with a structured takeoff sheet, not manual math.',
+    landingModBoqDesc: 'Generate a Bill of Quantities directly from your takeoff — items, units, and quantities together.',
+    landingModRateAnalysisDesc: 'Break down the rate for every item — labour, material, and equipment rates separated out.',
+    landingModMaterialsDesc: 'Track material lists, demand, and supply in one place.',
+    landingModVendorsDesc: 'Keep vendor lists, quotations, and contact details organized.',
+    landingModProcurementDesc: 'Follow procurement from purchase order through to delivery.',
+    landingModReinforcementDesc: 'Generate a Bar Bending Schedule (BBS), with cutting and bending calculations included.',
+    landingModBudgetDesc: 'Set the project budget and compare it against spend over time.',
+    landingModTenderDesc: 'Prepare and manage tender documents.',
+    landingModCostTrackingDesc: 'Track daily and weekly costs, and check them against the budget.',
+    landingModReportsDesc: 'Export BOQ, cost, material, and BBS reports as PDF.',
+    landingModIntegrationDesc: 'Import building and BNBC data from the CivilOS Hub.',
+
+    landingEcosystemEyebrow: 'CivilOS Ecosystem',
+    landingEcosystemTitle: 'Projects are created in Hub, the numbers happen here',
+    landingEcosystemBody:
+      "EngineX Quanta isn't a standalone app — it's the estimating module of the CivilOS ecosystem. Project creation, team management, and building data all happen in Hub. You just pick a project that already exists in Hub and do the takeoff, BOQ, budget, and tender work here. Same account, same project data — nothing to set up twice.",
+    landingEcosystemPoint1: 'Create a project in Hub, it shows up here automatically',
+    landingEcosystemPoint2: 'One login works across both Hub and Quanta',
+    landingEcosystemPoint3: 'Building and BNBC data imports straight from Hub',
 
     // ── Sidebar navigation ──────────────────────────────────────
     navDashboard: 'Dashboard',

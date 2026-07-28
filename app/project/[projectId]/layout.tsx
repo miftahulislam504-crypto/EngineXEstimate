@@ -81,7 +81,7 @@ export default function ProjectWorkspaceLayout({ children }: { children: React.R
       >
         {/* লোগো + প্রজেক্ট বদলানোর লিংক */}
         <div className="flex items-center gap-2.5 px-4 py-4 border-b border-surface-border">
-          <Link href="/" className="flex-shrink-0">
+          <Link href="/projects" className="flex-shrink-0">
             <LogoMark size={32} />
           </Link>
           <div className="flex-1 min-w-0">
@@ -99,7 +99,7 @@ export default function ProjectWorkspaceLayout({ children }: { children: React.R
 
         {/* প্রজেক্ট বদলান */}
         <Link
-          href="/"
+          href="/projects"
           className="flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-text-muted
                      hover:text-text-primary hover:bg-surface-hover transition-colors border-b border-surface-border"
         >
