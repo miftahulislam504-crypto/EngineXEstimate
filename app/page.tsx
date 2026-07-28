@@ -74,14 +74,14 @@ export default function LandingPage() {
 
   return (
     <main className="min-h-screen bg-surface">
-      {/* Topbar */}
-      <header className="px-4 lg:px-8 py-4 flex items-center justify-between max-w-6xl mx-auto">
+      {/* Topbar — লোগো+নাম মাঝখানে, language switcher ডান পাশে ছোট করে।
+          "Already have an account?" লিংক সরানো হয়েছে — নিচে hero-তে
+          Let's Start বাটনই একমাত্র পরিষ্কার next step, দুইটা competing
+          CTA header-এ রাখার দরকার নেই। */}
+      <header className="relative px-4 lg:px-8 py-4 flex items-center justify-center max-w-6xl mx-auto">
         <LogoWithName size={30} />
-        <div className="flex items-center gap-3">
+        <div className="absolute right-4 lg:right-8">
           <LanguageSwitcher />
-          <Link href="/login" className="btn-ghost text-sm">
-            {t('landingSecondaryCta')}
-          </Link>
         </div>
       </header>
 
@@ -101,39 +101,14 @@ export default function LandingPage() {
         />
 
         <div className="relative max-w-4xl mx-auto px-4 lg:px-8 pt-14 pb-16 text-center">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 border border-brand-100 px-3 py-1 rounded-full mb-6">
-            {t('landingEyebrow')}
-          </span>
-
-          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-text-primary tracking-tight leading-[1.15] mb-4 text-balance">
+          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-text-primary tracking-tight leading-[1.15] mb-8 text-balance">
             {t('landingHeroTitle')}
           </h1>
-
-          <p className="text-base text-text-secondary max-w-xl mx-auto mb-8 leading-relaxed">
-            {t('landingHeroSubtitle')}
-          </p>
 
           <Link href="/login" className="btn-primary text-base px-6 py-3 inline-flex">
             {t('landingCta')}
             <ArrowRight size={18} />
           </Link>
-
-          {/* সংক্ষিপ্ত stat strip — ledger-এর মতো তিনটা সংখ্যা, প্রতিটার
-              নিচে একটা thin rule, ফাইন্যান্সিয়াল সামারি লাইনের ইঙ্গিত */}
-          <div className="grid grid-cols-3 gap-4 max-w-lg mx-auto mt-14 pt-6 border-t border-surface-border">
-            <div>
-              <div className="text-2xl font-bold text-text-primary font-mono">13</div>
-              <div className="text-xs text-text-muted mt-0.5">{t('landingStatModules')}</div>
-            </div>
-            <div className="border-x border-surface-border">
-              <div className="text-2xl font-bold text-text-primary font-mono">6</div>
-              <div className="text-xs text-text-muted mt-0.5">{t('landingStatEcosystem')}</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-text-primary font-mono">1</div>
-              <div className="text-xs text-text-muted mt-0.5">{t('landingStatWorkflow')}</div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -181,30 +156,6 @@ export default function LandingPage() {
               </div>
             )
           })}
-        </div>
-      </section>
-
-      {/* ── CivilOS ecosystem ────────────────────────────────── */}
-      <section className="max-w-4xl mx-auto px-4 lg:px-8 py-14">
-        <div className="card p-6 sm:p-10">
-          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wider">
-            {t('landingEcosystemEyebrow')}
-          </span>
-          <h2 className="text-2xl font-bold text-text-primary tracking-tight mt-1.5 mb-4 text-balance">
-            {t('landingEcosystemTitle')}
-          </h2>
-          <p className="text-sm text-text-secondary leading-relaxed max-w-2xl mb-6">
-            {t('landingEcosystemBody')}
-          </p>
-
-          <div className="space-y-2.5">
-            {(['landingEcosystemPoint1', 'landingEcosystemPoint2', 'landingEcosystemPoint3'] as const).map((key) => (
-              <div key={key} className="flex items-center gap-2.5 text-sm text-text-secondary">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0" />
-                {t(key)}
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
