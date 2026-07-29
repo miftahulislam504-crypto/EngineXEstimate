@@ -23,7 +23,7 @@
 
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, Loader2 } from 'lucide-react'
@@ -33,6 +33,13 @@ import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
 import { LogoWithName } from '@/components/brand/Logo'
 import { ESTIMATING_MODULES } from '@/lib/modules'
 import type { TranslationKey } from '@/lib/i18n'
+
+// লাইভ BOQ ডেমোর জন্য একটা বাস্তবসম্মত রেট — ১০ ইঞ্চি ব্রিক ওয়ার্কের
+// প্রতি বর্গমিটার রেট, EngineX Learning-এর "drag the load, live
+// diagram" প্যাটার্নের এস্টিমেটিং-ভার্সন হিসেবে বসানো হলো। এখানে
+// rate ফিক্সড রাখা হয়েছে, শুধু quantity বদলালে amount নিজে থেকে
+// রিক্যালকুলেট হবে — যা আসল BOQ মডিউলের মূল আচরণ প্রদর্শন করছে।
+const DEMO_RATE = 1850 // ৳ প্রতি বর্গমিটার
 
 // mod.sidebarLabelKey (যেমন 'navQuantityTakeoff') থেকে descriptionKey
 // (যেমন 'landingModQuantityTakeoffDesc') বানানোর ম্যাপ — dynamic
@@ -58,6 +65,7 @@ export default function LandingPage() {
   const router = useRouter()
   const { user, initialized } = useAuthStore()
   const { t } = useLang()
+  const [demoQty, setDemoQty] = useState(120)
 
   // লগইন করা থাকলে landing page না দেখিয়ে সরাসরি project selector-এ
   useEffect(() => {
@@ -100,15 +108,90 @@ export default function LandingPage() {
           }}
         />
 
-        <div className="relative max-w-4xl mx-auto px-4 lg:px-8 pt-14 pb-16 text-center">
-          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold text-text-primary tracking-tight leading-[1.15] mb-8 text-balance">
-            {t('landingHeroTitle')}
+        <div className="relative max-w-2xl mx-auto px-4 lg:px-8 pt-14 pb-12 text-left">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 bg-brand-50 border border-brand-100 px-3 py-1 rounded-full mb-6">
+            {t('landingEyebrow')}
+          </span>
+
+          {/* দুই-রঙা headline — EngineX Learning-এর হিরো থেকে ধার করা
+              প্যাটার্ন (কালো লাইন + accent রঙে দ্বিতীয় লাইন), যাতে
+              headline-টা শুধু caption না হয়ে একটা বক্তব্য হয়ে ওঠে। */}
+          <h1 className="text-3xl sm:text-4xl lg:text-[2.75rem] font-bold tracking-tight leading-[1.15] mb-5">
+            <span className="text-text-primary">{t('landingHeroTitlePart1')}</span>
+            <br />
+            <span className="text-brand-600">{t('landingHeroTitlePart2')}</span>
           </h1>
+
+          <p className="text-base text-text-secondary max-w-md mb-8 leading-relaxed">
+            {t('landingHeroBody')}
+          </p>
 
           <Link href="/login" className="btn-primary text-base px-6 py-3 inline-flex">
             {t('landingCta')}
             <ArrowRight size={18} />
           </Link>
+        </div>
+
+        {/* লাইভ BOQ ডেমো — centerpiece। EngineX Learning-এর draggable
+            bending-moment diagram-এর সমতুল্য: একটা static screenshot
+            না, বরং প্রোডাক্টের আসল আচরণ (quantity বদলালে rate × qty
+            রিক্যালকুলেট) সরাসরি দেখানো, ছোট আকারে হলেও। */}
+        <div className="relative max-w-2xl mx-auto px-4 lg:px-8 pb-16">
+          <div className="card p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-semibold text-text-primary">{t('landingDemoLabel')}</span>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-text-muted bg-surface-hover border border-surface-border px-2 py-0.5 rounded-full">
+                BOQ
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 sm:gap-4 items-end">
+              {/* Quantity — একমাত্র editable input, slider হিসেবে */}
+              <div>
+                <label className="block text-[11px] text-text-muted mb-1.5">{t('landingDemoQtyLabel')}</label>
+                <div className="flex items-baseline gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={demoQty}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      setDemoQty(Number.isFinite(v) ? Math.max(1, Math.min(999, v)) : 1)
+                    }}
+                    className="w-full min-w-0 bg-transparent text-xl sm:text-2xl font-bold font-mono text-text-primary outline-none border-b-2 border-brand-200 focus:border-brand-500 pb-1 transition-colors"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={400}
+                  value={demoQty}
+                  onChange={(e) => setDemoQty(Number(e.target.value))}
+                  className="w-full mt-2 accent-brand-600"
+                />
+                <span className="text-[10px] text-text-muted">{t('landingDemoUnit')}</span>
+              </div>
+
+              {/* Rate — ফিক্সড, শুধু দেখানোর জন্য */}
+              <div>
+                <label className="block text-[11px] text-text-muted mb-1.5">{t('landingDemoRateLabel')}</label>
+                <div className="text-xl sm:text-2xl font-bold font-mono text-text-secondary pb-1 border-b-2 border-transparent">
+                  ৳{DEMO_RATE.toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              {/* Amount — স্বয়ংক্রিয়ভাবে রিক্যালকুলেটেড, brand রঙে হাইলাইট */}
+              <div>
+                <label className="block text-[11px] text-text-muted mb-1.5">{t('landingDemoAmountLabel')}</label>
+                <div className="text-xl sm:text-2xl font-bold font-mono text-brand-600 pb-1 border-b-2 border-transparent tabular-nums">
+                  ৳{(demoQty * DEMO_RATE).toLocaleString('en-IN')}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-text-muted mt-3 font-mono">{t('landingDemoCaption')}</p>
         </div>
       </section>
 

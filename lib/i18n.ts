@@ -37,8 +37,18 @@ export const translations = {
     statusCompleted: 'সম্পন্ন',
 
     // ── Landing page (root route) ─────────────────────────────
-    landingHeroTitle: 'টেকঅফ থেকে টেন্ডার, এক জায়গায় হিসাব',
+    landingEyebrow: '২০২৬ বাংলাদেশ মার্কেট রেট অনুসারে',
+    landingHeroTitlePart1: 'টেকঅফ থেকে টেন্ডার,',
+    landingHeroTitlePart2: 'এক জায়গায় হিসাব।',
+    landingHeroBody: 'কোয়ান্টিটি বদলান, রেট নিজে থেকেই মিলে যাবে — নিচের ছোট্ট BOQ লাইনটা নাড়িয়ে দেখুন।',
     landingCta: "Let's Start",
+
+    landingDemoLabel: 'ব্রিক ওয়ার্ক, ১০ ইঞ্চি',
+    landingDemoQtyLabel: 'পরিমাণ',
+    landingDemoUnit: 'বর্গমিটার',
+    landingDemoRateLabel: 'রেট',
+    landingDemoAmountLabel: 'মোট',
+    landingDemoCaption: 'নাড়িয়ে দেখুন — এটা ছবি না, লাইভ হিসাব',
 
     landingModulesEyebrow: 'যা যা করা যাবে',
     landingModulesTitle: 'একটা প্রজেক্টে সব ১৩টা মডিউল',
@@ -545,8 +555,18 @@ export const translations = {
     statusCompleted: 'Completed',
 
     // ── Landing page (root route) ─────────────────────────────
-    landingHeroTitle: 'From takeoff to tender, one running ledger',
+    landingEyebrow: 'Priced to 2026 Bangladesh market rates',
+    landingHeroTitlePart1: 'From takeoff to tender,',
+    landingHeroTitlePart2: 'one running ledger.',
+    landingHeroBody: 'Change the quantity and the rate follows — try the small BOQ line below.',
     landingCta: "Let's Start",
+
+    landingDemoLabel: 'Brick work, 10 inch',
+    landingDemoQtyLabel: 'Quantity',
+    landingDemoUnit: 'sq. m',
+    landingDemoRateLabel: 'Rate',
+    landingDemoAmountLabel: 'Amount',
+    landingDemoCaption: "Drag it — this isn't a screenshot, it's a live calculation",
 
     landingModulesEyebrow: 'What you can do',
     landingModulesTitle: 'All 13 modules, one project',
