@@ -5,47 +5,43 @@ import { useState, useRef } from 'react'
 import { parseQuantityTakeoffExport } from '@/lib/services/quantity-takeoff.service'
 import { QuantityTakeoffExport } from '@/lib/types/quantity-takeoff.types'
 import { useLang } from '@/components/providers/LanguageProvider'
-import { useHubModuleImport } from '@/lib/integration/useHubModuleImport'
+import { AutoSyncStatus } from '@/lib/integration/hub-module-import'
 
 interface QuantityImportPanelProps {
-  projectId: string
-  /** payload-এর পাশাপাশি source version info দেয়, যাতে caller
-   * (page) saveQuantityTakeoff() সফল হওয়ার *পরে*
-   * linkHubImportDependencies(projectId, archVersion, structVersion)
-   * কল করতে পারে — dependency link সবসময় সফল-সেভ-হওয়া ডেটার ওপর
-   * ভিত্তি করেই হওয়া উচিত (hub-module-import.ts-এর ফাইল-শীর্ষ নোট
-   * দ্রষ্টব্য)। manual JSON/paste path-এ sourceVersions undefined —
-   * সেক্ষেত্রে page dependency-link স্কিপ করবে (raw JSON-এ version
-   * থাকলেও সেটা Hub-verified না)।
+  /** manual JSON/paste path-এর জন্য — auto-sync (page-level,
+   * এই component-এর বাইরে) নিজেই save+link করে ফেলে, তাই manual
+   * path-এর payload page-কে দিয়ে page-ই আগের মতো save করবে
+   * (sourceVersions সবসময় undefined এখানে, কারণ raw JSON-এ থাকা
+   * version Hub-verified না)।
    */
   onImportSuccess: (payload: QuantityTakeoffExport, sourceVersions?: { architectural: number; structural: number }) => void
+  /** page থেকে pass করা হয় (useHubQuantityAutoSync ওখানে মাউন্ট
+   * করা থাকে, সবসময় সক্রিয় — এই panel unmount হলেও চলতে থাকে,
+   * quantityData ইতিমধ্যে থাকলেও upstream বদলালে auto-sync হওয়া
+   * উচিত) — এই component শুধু status দেখায়, নিজে listener মাউন্ট
+   * করে না।
+   */
+  autoSyncStatus: AutoSyncStatus | null
 }
 
 /**
- * HubImportPanel.tsx-এর একই UX প্যাটার্ন (drag-drop + paste), এখন
- * তার ওপরে একটা তৃতীয়, primary option যোগ করা হয়েছে: Hub থেকে
- * সরাসরি auto-fetch (getModuleData → mapper → validate, একই
- * parseQuantityTakeoffExport pipeline)। Structural app এখনো Hub-এ
- * কিছু পাঠায় না বলে auto-fetch আজ ব্যর্থ হবে যদি শুধু Architectural
- * থাকে — সেক্ষেত্রে ম্যানুয়াল পথ (নিচে, অপরিবর্তিত) এখনো কাজ করে।
+ * এখন দুটো path সমান্তরালে চলে:
+ *  1. Hub auto-sync status (উপরে, শুধু status দেখায়, কোনো বাটন নেই) —
+ *     আসল listener page-level-এ (app/.../quantity-takeoff/page.tsx)
+ *     মাউন্ট করা, কারণ auto-sync-কে চালু থাকতে হবে এই panel
+ *     unmount হওয়ার পরও (quantityData থাকলে এই panel আর দেখানো হয়
+ *     না, কিন্তু upstream তখনও বদলাতে পারে)।
+ *  2. Manual JSON (drag-drop + paste, নিচে, অপরিবর্তিত) — Structural
+ *     app এখনো Hub-এ কিছু পাঠায় না বলে auto-sync আজ "waiting"-এ
+ *     থাকবে; ততক্ষণ এই fallback ব্যবহার করা যায়।
  */
-export function QuantityImportPanel({ projectId, onImportSuccess }: QuantityImportPanelProps) {
+export function QuantityImportPanel({ onImportSuccess, autoSyncStatus }: QuantityImportPanelProps) {
   const { t } = useLang()
   const [pasteValue, setPasteValue] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const hubImport = useHubModuleImport()
-
-  async function handleHubFetch() {
-    const r = await hubImport.run(projectId)
-    setErrors(r.errors)
-    setWarnings(r.warnings)
-    if (r.success && r.parsed && r.architecturalVersion !== undefined && r.structuralVersion !== undefined) {
-      onImportSuccess(r.parsed, { architectural: r.architecturalVersion, structural: r.structuralVersion })
-    }
-  }
 
   function handleParsed(rawJson: string) {
     const result = parseQuantityTakeoffExport(rawJson)
@@ -84,22 +80,23 @@ export function QuantityImportPanel({ projectId, onImportSuccess }: QuantityImpo
 
       <div className="rounded-lg border border-brand-200 bg-brand-50 p-4">
         <p className="text-sm font-medium text-text-primary">{t('hubAutoFetchTitle')}</p>
-        <button onClick={handleHubFetch} disabled={hubImport.loading} className="btn-primary mt-2">
-          {hubImport.loading ? t('hubAutoFetchLoading') : t('hubAutoFetchButton')}
-        </button>
-        {hubImport.result && !hubImport.result.success && (
-          <p className="mt-2 text-sm text-status-holdText">
-            {!hubImport.result.architecturalAvailable
-              ? t('hubAutoFetchArchNotFound')
-              : !hubImport.result.structuralAvailable
-                ? t('hubAutoFetchStructNotFound')
-                : null}
+        {!autoSyncStatus && <p className="mt-2 text-sm text-text-muted">{t('hubAutoFetchLoading')}</p>}
+        {autoSyncStatus?.state === 'waiting' && (
+          <p className="mt-2 text-sm text-text-muted">
+            {!autoSyncStatus.result.architecturalAvailable ? t('hubAutoFetchArchNotFound') : t('hubAutoFetchStructNotFound')}
           </p>
         )}
-        {hubImport.result?.success && (
+        {autoSyncStatus?.state === 'error' && (
+          <ul className="mt-2 space-y-1 text-sm text-status-holdText list-disc list-inside">
+            {autoSyncStatus.result.errors.map((err, i) => (
+              <li key={i}>{err}</li>
+            ))}
+          </ul>
+        )}
+        {autoSyncStatus?.state === 'synced' && (
           <p className="mt-2 text-xs text-text-muted">
-            Architectural {t('hubAutoFetchVersionLabel')} {hubImport.result.architecturalVersion} · Structural{' '}
-            {t('hubAutoFetchVersionLabel')} {hubImport.result.structuralVersion}
+            {t('hubAutoSyncedLabel')} — Architectural {t('hubAutoFetchVersionLabel')} {autoSyncStatus.result.architecturalVersion} · Structural{' '}
+            {t('hubAutoFetchVersionLabel')} {autoSyncStatus.result.structuralVersion}
           </p>
         )}
       </div>

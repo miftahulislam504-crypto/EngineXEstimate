@@ -27,6 +27,7 @@ import { LanguageSwitcher } from '@/components/providers/LanguageSwitcher'
 import { LogoMark } from '@/components/brand/Logo'
 import { ESTIMATING_MODULES } from '@/lib/modules'
 import { getStatusBadgeClass, getStatusLabelKey } from '@/lib/utils'
+import { useHubModuleExportAutoSync } from '@/lib/integration/useHubModuleExport'
 
 export default function ProjectWorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -37,6 +38,13 @@ export default function ProjectWorkspaceLayout({ children }: { children: React.R
   const { user, estimatingRole, initialized, signOut } = useAuthStore()
   const { activeProject, activeProjectLoading, fetchActiveProject, clearActiveProject } = useProjectStore()
   const { t } = useLang()
+
+  // এই layout সব module page জুড়ে persist করে (Next.js layout
+  // nesting), তাই এখানে mount করা মানে ব্যবহারকারী BOQ/Budget/
+  // Procurement যেখানেই থাকুন, Hub-এ auto-push সবসময় সক্রিয় থাকে —
+  // কোনো একটা নির্দিষ্ট module page-এ বসালে সেই page ছাড়লেই sync বন্ধ
+  // হয়ে যেত।
+  const exportSyncStatus = useHubModuleExportAutoSync(projectId)
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -127,6 +135,28 @@ export default function ProjectWorkspaceLayout({ children }: { children: React.R
             )
           })}
         </nav>
+
+        {/* Hub auto-push status — নিরব ইঙ্গিত, কোনো action নেই */}
+        <div className="px-4 pb-1.5">
+          <p className="text-[11px] text-text-muted flex items-center gap-1.5">
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${
+                exportSyncStatus.state === 'pushing'
+                  ? 'bg-amber-500 animate-pulse'
+                  : exportSyncStatus.state === 'error'
+                    ? 'bg-red-500'
+                    : exportSyncStatus.state === 'pushed'
+                      ? 'bg-emerald-500'
+                      : 'bg-surface-border'
+              }`}
+            />
+            {exportSyncStatus.state === 'pushing' && t('hubExportSyncPushing')}
+            {exportSyncStatus.state === 'pending' && t('hubExportSyncPending')}
+            {exportSyncStatus.state === 'pushed' && `${t('hubExportSyncPushed')} · v${exportSyncStatus.version}`}
+            {exportSyncStatus.state === 'error' && t('hubExportSyncError')}
+            {exportSyncStatus.state === 'idle' && t('hubExportSyncIdle')}
+          </p>
+        </div>
 
         {/* ব্যবহারকারী + সাইন আউট */}
         <div className="px-3 pb-3 pt-2 border-t border-surface-border flex-shrink-0 space-y-1">

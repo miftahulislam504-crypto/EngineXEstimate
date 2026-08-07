@@ -42,6 +42,8 @@ import {
 } from '@/lib/services/procurement.service'
 import { calculateCashFlow } from '@/lib/services/cashflow.service'
 import { bumpOwnModuleVersion, saveOwnModuleData } from '@/lib/integration/hub-sdk-client'
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 import type { EstimatingModuleData } from '@/lib/types/module-data.types'
 
 export interface HubModuleExportResult {
@@ -164,4 +166,103 @@ export async function pushHubExport(projectId: string, data: EstimatingModuleDat
   const newVersion = await bumpOwnModuleVersion(projectId)
   await saveOwnModuleData(projectId, data as Record<string, unknown>, newVersion)
   return newVersion
+}
+
+// ─── Auto-push (কোনো বাটন ছাড়া) ──────────────────────────────────────
+//
+// import দিকের subscribeToHubQuantityAutoSync()-এর ঠিক বিপরীত দিক।
+// Estimate app নিজের ৫টা estimatingInput doc-এ (activeBoqVersion,
+// budget, procurementSchedule, rateAnalysis, vendorData — সব
+// boq.firestore.ts/budget.firestore.ts/procurement.firestore.ts/
+// rate-analysis.firestore.ts/vendor.firestore.ts-এর নিজস্ব path
+// কমেন্ট থেকে নেওয়া) onSnapshot listener বসায়। যেকোনো একটা বদলালে
+// (ব্যবহারকারী BOQ save করলে, Budget approve করলে, ইত্যাদি) debounce
+// করে prepareHubExport()+pushHubExport() চালায় — কোনো নির্দিষ্ট save
+// ফাংশনে হুক বসাতে হয় না, তাই ভবিষ্যতে নতুন কোনো estimatingInput doc
+// যোগ হলেও (যতক্ষণ নিচের ESTIMATING_INPUT_DOCS তালিকায় যোগ করা হয়)
+// auto-push নিজে থেকেই কভার করবে।
+//
+// debounce কেন দরকার: একটার পর একটা কয়েকটা field দ্রুত বদলালে
+// (যেমন BOQ item add করার পর সাথে সাথে Rate Analysis-ও আপডেট) প্রতি
+// ছোট পরিবর্তনে আলাদা push+version-bump না করে, শেষ পরিবর্তনের কিছুক্ষণ
+// পর একবারই push করা — bumpOwnModuleVersion() প্রতিবার downstream
+// (PM app) সব "OUTDATED" মার্ক করে দেয় (Hub-এর dependency cascade,
+// dependency.firestore.ts), তাই ঘন ঘন bump না করাই ভালো UX।
+
+const ESTIMATING_INPUT_DOCS = ['activeBoqVersion', 'budget', 'procurementSchedule', 'rateAnalysis', 'vendorData'] as const
+const AUTO_PUSH_DEBOUNCE_MS = 4000
+
+export type ExportAutoSyncStatus =
+  | { state: 'idle' } // এখনো কোনো পরিবর্তন ধরা পড়েনি এই সেশনে
+  | { state: 'pending' } // পরিবর্তন ধরা পড়েছে, debounce টাইমার চলছে
+  | { state: 'pushing' } // Hub-এ পাঠানো হচ্ছে
+  | { state: 'pushed'; version: number; emptyFields: (keyof EstimatingModuleData)[] }
+  | { state: 'error'; message: string }
+
+/**
+ * component-mount হওয়া মাত্র estimatingInput-এর ৫টা doc শোনা শুরু
+ * করে। কোনোটা বদলালে debounce করে prepareHubExport()+pushHubExport()
+ * চালায়, কোনো ব্যবহারকারী-action ছাড়াই। ফলাফল onStatusChange-এ যায়
+ * — caller (React hook) শুধু UI-তে স্ট্যাটাস দেখাবে।
+ *
+ * @returns unsubscribe — সব listener বন্ধ করে + pending debounce
+ * timer বাতিল করে।
+ */
+export function subscribeToHubExportAutoSync(projectId: string, onStatusChange: (status: ExportAutoSyncStatus) => void): () => void {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let pushing = false
+  let pendingWhilePushing = false
+
+  function scheduleAutoPush() {
+    onStatusChange({ state: 'pending' })
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(runAutoPush, AUTO_PUSH_DEBOUNCE_MS)
+  }
+
+  async function runAutoPush() {
+    if (pushing) {
+      // ইতিমধ্যে একটা push চলছে — এই মুহূর্তে আরেকটা শুরু না করে, চলমানটা
+      // শেষ হলে আবার একবার চালানোর জন্য চিহ্নিত করে রাখা (যাতে সেই
+      // মধ্যবর্তী পরিবর্তনটা miss না হয়)
+      pendingWhilePushing = true
+      return
+    }
+    pushing = true
+    onStatusChange({ state: 'pushing' })
+    try {
+      const { data, emptyFields } = await prepareHubExport(projectId)
+      const newVersion = await pushHubExport(projectId, data)
+      onStatusChange({ state: 'pushed', version: newVersion, emptyFields })
+    } catch (e) {
+      onStatusChange({ state: 'error', message: e instanceof Error ? e.message : 'Hub-এ পাঠাতে ব্যর্থ — অজানা ত্রুটি।' })
+    } finally {
+      pushing = false
+      if (pendingWhilePushing) {
+        pendingWhilePushing = false
+        scheduleAutoPush()
+      }
+    }
+  }
+
+  const unsubscribers: Unsubscribe[] = ESTIMATING_INPUT_DOCS.map((docName) => {
+    let isFirstSnapshot = true // onSnapshot attach হওয়ার সাথে সাথেই একবার fire করে (Firestore-এর নিজস্ব আচরণ) — সেই প্রথম snapshot আসলে "পরিবর্তন" না, শুধু বর্তমান অবস্থা। প্রতিবার page load-এ অকারণে push এড়াতে এটা স্কিপ করা হয়, শুধু *পরবর্তী* snapshot থেকেই push trigger হয়।
+    return onSnapshot(
+      doc(db, 'projects', projectId, 'estimatingInput', docName),
+      () => {
+        if (isFirstSnapshot) {
+          isFirstSnapshot = false
+          return
+        }
+        scheduleAutoPush()
+      },
+      () => {
+        /* permission/network error — non-critical, পরের সফল snapshot-এ ঠিক হয়ে যাবে (hub-sdk-client.ts-এর কনভেনশন) */
+      }
+    )
+  })
+
+  return () => {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    unsubscribers.forEach((unsub) => unsub())
+  }
 }

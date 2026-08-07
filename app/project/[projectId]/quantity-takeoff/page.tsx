@@ -1,28 +1,34 @@
 // app/project/[projectId]/quantity-takeoff/page.tsx
 //
-// Module 2 — আগে parent state (quantityData/quantityImportId) দিয়ে
-// চালানো হতো, এখন useProjectEstimatingData hook এই দায়িত্ব নিয়েছে
-// (refreshQuantity() দিয়ে refetch)। import success হ্যান্ডলার আগের
-// মতোই saveQuantityTakeoff কল করে, তারপর hook refresh করে।
+// Module 2 — useProjectEstimatingData hook quantityData/quantityImportId
+// পরিচালনা করে (refreshQuantity() দিয়ে refetch)।
 //
-// sourceVersions (নতুন, optional) — QuantityImportPanel-এর Hub
-// auto-fetch path থেকে আসে (manual JSON/paste path-এ undefined)। save
-// সফল হওয়ার *পরে* linkHubImportDependencies() কল করা হয়, যাতে Hub-এর
-// dependency graph জানে estimating কোন architectural/structural
-// version থেকে এই quantities বানিয়েছে (hub-module-import.ts-এর
-// ফাইল-শীর্ষ নোট দ্রষ্টব্য — link সবসময় সফল-সেভ-হওয়া ডেটার ওপর
-// ভিত্তি করে হওয়া উচিত, তাই এখানে save-এর পরে, best-effort)।
+// ⚠️ useHubQuantityAutoSync() এখানে, page-level-এ মাউন্ট করা —
+// QuantityImportPanel-এর ভেতরে না, কারণ সেই panel শুধু তখনই দেখানো হয়
+// যখন quantityData নেই (নিচের forceImportView লজিক দেখুন)। কিন্তু
+// auto-sync চালু থাকা উচিত সবসময়, এমনকি breakdown view দেখানোর সময়ও
+// — কারণ ব্যবহারকারী "সম্পূর্ণ automatic" চেয়েছেন: Architectural/
+// Structural upstream-এ নতুন version এলে, ব্যবহারকারী যে view-ই
+// দেখুক না কেন, quantities নিজে থেকে আপডেট হওয়া উচিত। panel unmount
+// হয়ে গেলে যদি listener-ও বন্ধ হয়ে যেত, upstream পরিবর্তন miss হয়ে
+// যেত যতক্ষণ না ব্যবহারকারী আবার import view-এ ফিরত।
+//
+// synced status এলে refreshQuantity() কল করা হয় (useEffect) — কারণ
+// subscribeToHubQuantityAutoSync() নিজেই saveQuantityTakeoff() কল করে
+// Firestore-এ লিখে দেয়, কিন্তু এই page-এর quantityData state
+// (useProjectEstimatingData থেকে আসা) সেটা নিজে থেকে জানে না যতক্ষণ
+// না refetch করা হয়।
 
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useProjectEstimatingData } from '@/lib/hooks/useProjectEstimatingData'
 import { QuantityImportPanel } from '@/components/quantity-takeoff/QuantityImportPanel'
 import { QuantityBreakdown } from '@/components/quantity-takeoff/QuantityBreakdown'
 import { saveQuantityTakeoff } from '@/lib/firestore/quantity-takeoff.firestore'
-import { linkHubImportDependencies } from '@/lib/integration/hub-module-import'
+import { useHubQuantityAutoSync } from '@/lib/integration/useHubModuleImport'
 import { QuantityTakeoffExport } from '@/lib/types/quantity-takeoff.types'
 import { useLang } from '@/components/providers/LanguageProvider'
 
@@ -30,26 +36,31 @@ export default function QuantityTakeoffPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { quantityData, quantityImportId, quantityLoading, refreshQuantity } = useProjectEstimatingData(projectId)
   const { t } = useLang()
+  const { status: autoSyncStatus } = useHubQuantityAutoSync(projectId)
 
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [forceImportView, setForceImportView] = useState(false)
 
-  async function handleImportSuccess(
-    payload: QuantityTakeoffExport,
-    sourceVersions?: { architectural: number; structural: number }
-  ) {
+  // auto-sync নিজেই Firestore-এ save করে ফেলে (subscribeToHubQuantityAutoSync-এর
+  // ভেতরে) — এই page-কে শুধু জানতে হবে সেটা হয়েছে, যাতে quantityData
+  // state refetch করে নতুন ডেটা দেখাতে পারে
+  useEffect(() => {
+    if (autoSyncStatus?.state === 'synced' && autoSyncStatus.savedImportId) {
+      refreshQuantity()
+      setForceImportView(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSyncStatus?.state === 'synced' ? autoSyncStatus.savedImportId : null])
+
+  async function handleImportSuccess(payload: QuantityTakeoffExport) {
+    // manual JSON/paste path — auto-sync-এর dependency-link এখানে হয়
+    // না (sourceVersions raw JSON থেকে Hub-verified না), শুধু save +
+    // refresh
     setSaving(true)
     setSaveError(null)
     try {
       await saveQuantityTakeoff(payload)
-      if (sourceVersions) {
-        // best-effort — hub-module-import.ts-এর নিজস্ব try/catch এতে
-        // থাকা সত্ত্বেও এখানে আবার wrap করা হলো না, কারণ
-        // linkHubImportDependencies() নিজেই কখনো throw করে না (ভেতরে
-        // catch করা)
-        await linkHubImportDependencies(projectId, sourceVersions.architectural, sourceVersions.structural)
-      }
       await refreshQuantity()
       setForceImportView(false)
     } catch {
@@ -77,10 +88,16 @@ export default function QuantityTakeoffPage() {
       {saveError && <p className="text-xs text-red-600">{saveError}</p>}
 
       {!quantityData || forceImportView ? (
-        <QuantityImportPanel projectId={projectId} onImportSuccess={handleImportSuccess} />
+        <QuantityImportPanel onImportSuccess={handleImportSuccess} autoSyncStatus={autoSyncStatus} />
       ) : (
         <div className="space-y-4">
           {saving && <p className="text-xs text-text-muted">{t('savingInProgress')}</p>}
+          {autoSyncStatus?.state === 'synced' && (
+            <p className="text-xs text-text-muted">
+              {t('hubAutoSyncedLabel')} — Architectural {t('hubAutoFetchVersionLabel')} {autoSyncStatus.result.architecturalVersion} · Structural{' '}
+              {t('hubAutoFetchVersionLabel')} {autoSyncStatus.result.structuralVersion}
+            </p>
+          )}
           <QuantityBreakdown
             projectId={projectId}
             importId={quantityImportId!}
