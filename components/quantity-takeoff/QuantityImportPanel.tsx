@@ -5,25 +5,47 @@ import { useState, useRef } from 'react'
 import { parseQuantityTakeoffExport } from '@/lib/services/quantity-takeoff.service'
 import { QuantityTakeoffExport } from '@/lib/types/quantity-takeoff.types'
 import { useLang } from '@/components/providers/LanguageProvider'
+import { useHubModuleImport } from '@/lib/integration/useHubModuleImport'
 
 interface QuantityImportPanelProps {
-  onImportSuccess: (payload: QuantityTakeoffExport) => void
+  projectId: string
+  /** payload-এর পাশাপাশি source version info দেয়, যাতে caller
+   * (page) saveQuantityTakeoff() সফল হওয়ার *পরে*
+   * linkHubImportDependencies(projectId, archVersion, structVersion)
+   * কল করতে পারে — dependency link সবসময় সফল-সেভ-হওয়া ডেটার ওপর
+   * ভিত্তি করেই হওয়া উচিত (hub-module-import.ts-এর ফাইল-শীর্ষ নোট
+   * দ্রষ্টব্য)। manual JSON/paste path-এ sourceVersions undefined —
+   * সেক্ষেত্রে page dependency-link স্কিপ করবে (raw JSON-এ version
+   * থাকলেও সেটা Hub-verified না)।
+   */
+  onImportSuccess: (payload: QuantityTakeoffExport, sourceVersions?: { architectural: number; structural: number }) => void
 }
 
 /**
- * HubImportPanel.tsx-এর একই UX প্যাটার্ন (drag-drop + paste) —
- * কারণ এটাও একই কারণে manual JSON import: Hub এখনো এই export
- * তৈরি করে না (lib/types/quantity-takeoff.types.ts-এর শীর্ষের
- * নোট দ্রষ্টব্য), তাই যতক্ষণ Hub-এ এই feature না আসে, Structural/
- * Architectural app থেকে manually export করা JSON এখানে দিতে হবে।
+ * HubImportPanel.tsx-এর একই UX প্যাটার্ন (drag-drop + paste), এখন
+ * তার ওপরে একটা তৃতীয়, primary option যোগ করা হয়েছে: Hub থেকে
+ * সরাসরি auto-fetch (getModuleData → mapper → validate, একই
+ * parseQuantityTakeoffExport pipeline)। Structural app এখনো Hub-এ
+ * কিছু পাঠায় না বলে auto-fetch আজ ব্যর্থ হবে যদি শুধু Architectural
+ * থাকে — সেক্ষেত্রে ম্যানুয়াল পথ (নিচে, অপরিবর্তিত) এখনো কাজ করে।
  */
-export function QuantityImportPanel({ onImportSuccess }: QuantityImportPanelProps) {
+export function QuantityImportPanel({ projectId, onImportSuccess }: QuantityImportPanelProps) {
   const { t } = useLang()
   const [pasteValue, setPasteValue] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const hubImport = useHubModuleImport()
+
+  async function handleHubFetch() {
+    const r = await hubImport.run(projectId)
+    setErrors(r.errors)
+    setWarnings(r.warnings)
+    if (r.success && r.parsed && r.architecturalVersion !== undefined && r.structuralVersion !== undefined) {
+      onImportSuccess(r.parsed, { architectural: r.architecturalVersion, structural: r.structuralVersion })
+    }
+  }
 
   function handleParsed(rawJson: string) {
     const result = parseQuantityTakeoffExport(rawJson)
@@ -58,6 +80,34 @@ export function QuantityImportPanel({ onImportSuccess }: QuantityImportPanelProp
       <div>
         <h2 className="text-lg font-semibold text-text-primary">{t('quantityImportTitle')}</h2>
         <p className="mt-1 text-sm text-text-muted">{t('quantityImportDescription')}</p>
+      </div>
+
+      <div className="rounded-lg border border-brand-200 bg-brand-50 p-4">
+        <p className="text-sm font-medium text-text-primary">{t('hubAutoFetchTitle')}</p>
+        <button onClick={handleHubFetch} disabled={hubImport.loading} className="btn-primary mt-2">
+          {hubImport.loading ? t('hubAutoFetchLoading') : t('hubAutoFetchButton')}
+        </button>
+        {hubImport.result && !hubImport.result.success && (
+          <p className="mt-2 text-sm text-status-holdText">
+            {!hubImport.result.architecturalAvailable
+              ? t('hubAutoFetchArchNotFound')
+              : !hubImport.result.structuralAvailable
+                ? t('hubAutoFetchStructNotFound')
+                : null}
+          </p>
+        )}
+        {hubImport.result?.success && (
+          <p className="mt-2 text-xs text-text-muted">
+            Architectural {t('hubAutoFetchVersionLabel')} {hubImport.result.architecturalVersion} · Structural{' '}
+            {t('hubAutoFetchVersionLabel')} {hubImport.result.structuralVersion}
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="divider flex-1" />
+        <span className="text-xs text-text-muted">{t('or')}</span>
+        <div className="divider flex-1" />
       </div>
 
       <div

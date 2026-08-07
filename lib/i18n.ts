@@ -180,7 +180,13 @@ export const translations = {
     fileReadError: 'ফাইল পড়া যায়নি। আবার চেষ্টা করুন।',
     quantityImportTitle: 'Quantity Takeoff ডেটা আনুন',
     quantityImportDescription:
-      'Structural ও Architectural app থেকে Hub-এর মাধ্যমে export করা JSON আপলোড করুন বা পেস্ট করুন। এই দুই app এখনো তৈরি না হওয়া পর্যন্ত, Hub-ও এই export এখনো সাপোর্ট করে না — তাই এই ফরম্যাট এই মুহূর্তে একটা প্রস্তাবিত contract, চূড়ান্ত না।',
+      'Hub থেকে সরাসরি auto-fetch করুন (নিচে), অথবা JSON ফাইল আপলোড/পেস্ট করে ম্যানুয়ালি দিন। Hub-এ Structural app থেকে ডেটা আসা এখনো শুরু হয়নি, তাই auto-fetch আজ শুধু Architectural অংশ পাবে — Structural না আসা পর্যন্ত ম্যানুয়াল পথই একমাত্র সম্পূর্ণ উপায়।',
+    hubAutoFetchTitle: 'Hub থেকে auto-fetch করুন',
+    hubAutoFetchButton: 'Hub থেকে আনুন',
+    hubAutoFetchLoading: 'Hub থেকে পড়া হচ্ছে...',
+    hubAutoFetchArchNotFound: 'Hub-এ এখনো কোনো Architectural ডেটা পাওয়া যায়নি।',
+    hubAutoFetchStructNotFound: 'Hub-এ এখনো কোনো Structural ডেটা পাওয়া যায়নি — Structural app এখনো Hub-এ কিছু পাঠাচ্ছে না।',
+    hubAutoFetchVersionLabel: 'ভার্সন',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',
@@ -698,7 +704,13 @@ export const translations = {
     fileReadError: "Couldn't read the file. Please try again.",
     quantityImportTitle: 'Bring in Quantity Takeoff data',
     quantityImportDescription:
-      "Upload or paste JSON exported through Hub from the Structural and Architectural apps. Until those apps exist and Hub supports this export, this format is a proposed contract, not final.",
+      "Auto-fetch straight from Hub (below), or upload/paste a JSON file manually. Structural data isn't flowing into Hub yet, so auto-fetch only picks up the Architectural side today — manual entry is still the only complete path until Structural is connected.",
+    hubAutoFetchTitle: 'Auto-fetch from Hub',
+    hubAutoFetchButton: 'Fetch from Hub',
+    hubAutoFetchLoading: 'Reading from Hub...',
+    hubAutoFetchArchNotFound: 'No Architectural data found in Hub yet.',
+    hubAutoFetchStructNotFound: "No Structural data found in Hub yet — the Structural app isn't publishing to Hub yet.",
+    hubAutoFetchVersionLabel: 'version',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',

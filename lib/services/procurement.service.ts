@@ -5,11 +5,12 @@
 // material-quantity বের করা।
 
 import { BOQItem } from '@/lib/types/boq.types'
-import { RateAnalysisEntry } from '@/lib/types/rate-analysis.types'
+import { RateAnalysisEntry, LabourConsumption, EquipmentConsumption } from '@/lib/types/rate-analysis.types'
 import { Material } from '@/lib/types/material.types'
+import { ResourceRate } from '@/lib/types/resource-rate.types'
 import { BBSRow } from '@/lib/types/reinforcement.types'
 import { calculateBBSRows, summarizeBBSByDiameter } from '@/lib/services/reinforcement.service'
-import { MaterialProcurementNeed, ReinforcementProcurementNeed } from '@/lib/types/procurement.types'
+import { MaterialProcurementNeed, ResourceProcurementNeed, ReinforcementProcurementNeed } from '@/lib/types/procurement.types'
 
 /**
  * প্রতিটা BOQ item-এর material consumption (Rate Analysis থেকে) তার
@@ -62,6 +63,68 @@ export function findBoqItemsWithoutRateAnalysis(
   return boqItems
     .filter((item) => !rateAnalysisEntries.some((e) => e.boqItemId === item.id))
     .map((item) => item.itemName)
+}
+
+/**
+ * calculateMaterialProcurementNeeds-এর একই গুণ-ও-যোগ যুক্তি, labour ও
+ * equipment উভয়ের জন্য পুনর্ব্যবহারযোগ্য একটা generic ফাংশনে —
+ * getConsumption RateAnalysisEntry থেকে labour[] বা equipment[]
+ * বেছে দেয়, বাকি aggregation logic হুবহু এক। resource-rate.types.ts-এর
+ * ResourceRate[] থেকে unit lookup করা হয় (Material-এর মতো, কারণ
+ * LabourConsumption/EquipmentConsumption নিজে unit রাখে না, শুধু
+ * resourceRateId রাখে)।
+ */
+function calculateResourceProcurementNeeds(
+  boqItems: BOQItem[],
+  rateAnalysisEntries: RateAnalysisEntry[],
+  resourceRates: ResourceRate[],
+  resourceType: 'labour' | 'equipment',
+  getConsumption: (entry: RateAnalysisEntry) => (LabourConsumption | EquipmentConsumption)[]
+): ResourceProcurementNeed[] {
+  const needsByResourceId: Record<string, ResourceProcurementNeed> = {}
+
+  for (const boqItem of boqItems) {
+    const entry = rateAnalysisEntries.find((e) => e.boqItemId === boqItem.id)
+    if (!entry) continue // calculateMaterialProcurementNeeds-এর একই কারণ — Rate Analysis না থাকা item silently বাদ, findBoqItemsWithoutRateAnalysis() দিয়ে caller জানতে পারবে
+
+    for (const consumption of getConsumption(entry)) {
+      const resourceRate = resourceRates.find((r) => r.id === consumption.resourceRateId)
+      if (!resourceRate) continue
+
+      const quantityForThisItem = consumption.quantityPerUnit * boqItem.quantity
+
+      if (!needsByResourceId[resourceRate.id]) {
+        needsByResourceId[resourceRate.id] = {
+          resourceRateId: resourceRate.id,
+          resourceName: resourceRate.name,
+          resourceType,
+          unit: resourceRate.unit,
+          totalQuantityNeeded: 0,
+        }
+      }
+      needsByResourceId[resourceRate.id].totalQuantityNeeded += quantityForThisItem
+    }
+  }
+
+  return Object.values(needsByResourceId).sort((a, b) => a.resourceName.localeCompare(b.resourceName))
+}
+
+/** labourRequirement/labourDemand (Hub-এর EstimatingModuleData)-এর উৎস — একই ডেটা দুই নামে চাওয়া হয়েছে, তাই একই ফাংশন দুই জায়গায় ব্যবহার হবে (hub-module-export.ts দ্রষ্টব্য) */
+export function calculateLabourProcurementNeeds(
+  boqItems: BOQItem[],
+  rateAnalysisEntries: RateAnalysisEntry[],
+  resourceRates: ResourceRate[]
+): ResourceProcurementNeed[] {
+  return calculateResourceProcurementNeeds(boqItems, rateAnalysisEntries, resourceRates, 'labour', (e) => e.labour)
+}
+
+/** equipmentRequirement/equipmentDemand-এর উৎস — calculateLabourProcurementNeeds-এর সমান্তরাল */
+export function calculateEquipmentProcurementNeeds(
+  boqItems: BOQItem[],
+  rateAnalysisEntries: RateAnalysisEntry[],
+  resourceRates: ResourceRate[]
+): ResourceProcurementNeed[] {
+  return calculateResourceProcurementNeeds(boqItems, rateAnalysisEntries, resourceRates, 'equipment', (e) => e.equipment)
 }
 
 /**

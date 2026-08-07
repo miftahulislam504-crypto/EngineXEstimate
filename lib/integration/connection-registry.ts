@@ -78,12 +78,13 @@ export const CONNECTION_REGISTRY: ConnectionPoint[] = [
     direction: 'upstream',
     counterpartApp: 'CivilOS Structural',
     dataDescription: 'floor-ভিত্তিক footing/column/beam/slab dimension ও reinforcement quantity — Module 2 (Quantity Takeoff)-এর structural অংশ',
-    firestorePath: '(ডেটা payload path প্রস্তাবিত, চূড়ান্ত হয়নি) — তবে version/dependency/approval tracking-এর জন্য Hub SDK-এর confirmed path (projects/{projectId}/versions/structural ইত্যাদি) ব্যবহার হবে, যেহেতু \'structural\' ইতিমধ্যে Hub-এর ModuleId তালিকায় আছে',
-    isPathConfirmed: false,
-    schemaVersion: 'proposed-draft',
-    status: 'planned', // Structural app নিজেই এখনো তৈরি হয়নি
+    firestorePath: 'projects/{projectId}/moduleData/structural (Hub-এর module-data-sync pattern, 2026-08-05 zip-এ যোগ হয়েছে)',
+    isPathConfirmed: true, // Hub-এর lib/types/module-data.types.ts + lib/firestore/module-data-sync.firestore.ts থেকে verified — path ও shape (StructuralModuleData) দুটোই confirmed, যদিও shape-এর ভেতরের field গুলো এখনো unknown (নিচের নোট দেখুন)
+    schemaVersion: '1.0',
+    status: 'listening', // lib/integration/hub-sdk-client.ts-এর getModuleData()/structural-mapper.ts এই path শুনতে প্রস্তুত, কিন্তু EngineX-Structural আজ পর্যন্ত এখানে কিছু লেখে না (সেই App-এর src/lib/hub/-এ যা আছে সম্পূর্ণ ভিন্ন, deprecated hubSync/incoming-outgoing pattern, কোনো UI থেকে call হয় না — যাচাই করা হয়েছে, 2026-08-06)
     relatedModules: ['Module 2', 'Module 3', 'Module 7'],
-    notes: 'বর্তমান fallback: manual JSON import (QuantityImportPanel), একই EstimatingRelevantPayload-শৈলীর ভ্যালিডেশন নিয়ে। Structural app চালু হলে Estimating নিজের linkOwnDependency() দিয়ে এই dependency link করবে।',
+    notes:
+      'consumer-side সম্পূর্ণ (lib/integration/structural-mapper.ts + hub-module-import.ts)। producer-side বাকি: EngineX-Structural-এর নিজের কোডে hub.saveModuleData(projectId, \'structural\', \'structural\', {foundationQuantities, beamColumnSlabQuantities, reinforcementQuantities, ...}) কল বসাতে হবে — সেটা হলেই এই connection automatically live হয়ে যাবে, Estimating-এর দিকে আর কিছু বদলাতে হবে না। ততক্ষণ manual JSON import (QuantityImportPanel-এর ম্যানুয়াল অংশ) fallback হিসেবে থাকছে।',
   },
   {
     id: 'architectural-to-estimating-quantity',
@@ -91,12 +92,13 @@ export const CONNECTION_REGISTRY: ConnectionPoint[] = [
     direction: 'upstream',
     counterpartApp: 'CivilOS Architectural (Design)',
     dataDescription: 'floor-ভিত্তিক wall length/area, floor area, ceiling area, paint area, door/window count — Module 2-এর architectural অংশ',
-    firestorePath: '(ডেটা payload path প্রস্তাবিত, চূড়ান্ত হয়নি) — version/dependency tracking Hub SDK-এর confirmed path ব্যবহার করবে (\'architectural\' Hub-এর ModuleId তালিকায় আছে)',
-    isPathConfirmed: false,
-    schemaVersion: 'proposed-draft',
-    status: 'planned',
+    firestorePath: 'projects/{projectId}/moduleData/architectural (Hub-এর module-data-sync pattern, 2026-08-05 zip-এ যোগ হয়েছে)',
+    isPathConfirmed: true, // path ও shape (ArchitecturalModuleData) দুটোই Hub-এর zip থেকে verified
+    schemaVersion: '1.0',
+    status: 'listening', // architectural-mapper.ts + hub-module-import.ts এই path শুনতে প্রস্তুত। EngineXDraw আজ পর্যন্ত এখানে লেখে না — সেই App এখনো পুরনো moduleMetadata/Storage pattern (heavy geometry file, BuildingElementRef[]) ব্যবহার করে, এই নতুন structured-field moduleData pattern-এ migrate হয়নি (যাচাই করা হয়েছে, 2026-08-06)
     relatedModules: ['Module 2', 'Module 3'],
-    notes: 'বর্তমান fallback: manual JSON import (একই QuantityImportPanel, architecturalFloors অংশ)।',
+    notes:
+      'consumer-side সম্পূর্ণ। producer-side বাকি: EngineXDraw-এর কোডে hub.saveModuleData(projectId, \'architectural\', \'architectural\', {roomSchedule, wallSchedule, doorSchedule, windowSchedule, floorAreas, ...}) কল বসাতে হবে (অথবা পুরনো moduleMetadata/BuildingElementRef থেকে এই নতুন shape-এ রূপান্তর করে পাঠাতে হবে)। ততক্ষণ manual JSON import fallback হিসেবে থাকছে।',
   },
   {
     id: 'estimating-to-budget-boq',

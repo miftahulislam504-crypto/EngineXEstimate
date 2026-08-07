@@ -252,6 +252,12 @@ export function toStoredQuantityTakeoff(payload: QuantityTakeoffExport): StoredQ
     structuralFloors: payload.structuralFloors.map(
       (raw): QuantityLineItem<StructuralFloorQuantities> => ({ raw, isOverridden: false })
     ),
+    // hub-module-import.ts-এর duplicate-save guard এই দুটো ফিল্ড
+    // persist করা আছে ধরে নিয়েই কাজ করে (StoredQuantityTakeoff-এর
+    // নিজস্ব কমেন্ট দ্রষ্টব্য) — আগে এই ফাংশন এই ফিল্ড দুটো drop করে
+    // ফেলত, যার ফলে guard কখনো সঠিকভাবে কাজ করত না।
+    sourceArchitecturalVersion: payload.sourceArchitecturalVersion,
+    sourceStructuralVersion: payload.sourceStructuralVersion,
   }
 }
 

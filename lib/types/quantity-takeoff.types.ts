@@ -116,6 +116,14 @@ export interface StoredQuantityTakeoff {
   importedAt: number
   architecturalFloors: QuantityLineItem<ArchitecturalFloorQuantities>[]
   structuralFloors: QuantityLineItem<StructuralFloorQuantities>[]
+  /** Hub auto-sync (hub-module-import.ts)-এর duplicate-save guard-এর
+   * জন্য — কোন Architectural/Structural moduleData version থেকে এই
+   * import এসেছে সেটা persist করে রাখা হয়, যাতে page/tab reload-এর
+   * পরেও (in-memory guard হারিয়ে গেলেও) "এই version আগেই save করা
+   * হয়েছে কিনা" Firestore থেকে verify করা যায়। manual JSON/paste
+   * import-এ undefined থাকে (raw JSON-এর version Hub-verified না)। */
+  sourceArchitecturalVersion?: string
+  sourceStructuralVersion?: string
 }
 
 /**

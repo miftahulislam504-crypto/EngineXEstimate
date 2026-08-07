@@ -43,8 +43,9 @@ import {
 import { db } from '@/lib/firebase'
 import { ModuleId, ModuleVersionRecord, ModuleDependency, getDependencyStatus } from '@/lib/types/dependency.types'
 import { ApprovalRecord, ApprovalActor, SYSTEM_ACTOR } from '@/lib/types/approval.types'
-import { ContractStatus } from '@/lib/types/contract.types'
+import { ContractStatus, SourceApp } from '@/lib/types/contract.types'
 import { HubEvent, HubEventType } from '@/lib/types/event.types'
+import { ModuleDataRecord } from '@/lib/types/module-data.types'
 
 const OUR_APP: 'estimating' = 'estimating'
 
@@ -286,5 +287,78 @@ export function subscribeToEvents(projectId: string, onUpdate: (events: HubEvent
     q,
     (snap: QuerySnapshot) => onUpdate(snap.docs.map((s: QueryDocumentSnapshot) => toEvent(s.id, s.data()))),
     () => onUpdate([]) // permission/network error — Hub-এর কনভেনশন: খালি দেখায়, ভাঙে না
+  )
+}
+
+// ─── Module data sync (projects/{projectId}/moduleData/{moduleId}) ────────
+// Hub-এর lib/firestore/module-data-sync.firestore.ts (2026-08 zip)-এর
+// প্রতিরূপ — structured field data (schedules, quantities, BOQ...)
+// সরাসরি Firestore document-এ, Storage/fileUrl জড়িত না (সেটা আলাদা,
+// পুরনো moduleMetadata pattern — hub-import.types.ts-এর
+// HubExportPayload ওই পুরনো pattern-এর অংশ, এটা না)।
+//
+// getModuleData/subscribeToModuleData generic ModuleId নেয় — কারণ
+// Estimating-কে নিজের module না, architectural ও structural (upstream)
+// পড়তে হয়। saveModuleData ইচ্ছাকৃতভাবে শুধু OUR_APP-এ সীমাবদ্ধ
+// (bumpOwnModuleVersion-এর একই নীতি অনুযায়ী) — Estimating অন্য কোনো
+// module-এর data ওভাররাইট করার এখতিয়ার রাখে না।
+
+const moduleDataRef = (projectId: string, moduleId: ModuleId) =>
+  doc(db, 'projects', projectId, 'moduleData', moduleId)
+
+function toModuleDataRecord(moduleId: ModuleId, d: Record<string, unknown>): ModuleDataRecord {
+  return {
+    moduleId,
+    sourceApp: d.sourceApp as SourceApp,
+    data: (d.data as Record<string, unknown>) ?? {},
+    version: (d.version as number) ?? 0,
+    updatedAt: toISO(d.updatedAt),
+  }
+}
+
+/** upstream module-এর (architectural/structural) বর্তমান ডেটা এক-বার পড়ে। ডেটা এখনো না-থাকলে null (এখনো কোনো producer লেখেনি) — এটা error না। */
+export async function getModuleData(projectId: string, moduleId: ModuleId): Promise<ModuleDataRecord | null> {
+  const snap = await getDoc(moduleDataRef(projectId, moduleId))
+  if (!snap.exists()) return null
+  return toModuleDataRecord(moduleId, snap.data())
+}
+
+/** upstream module-এর ডেটা রিয়েল-টাইমে শোনে — producer app কখনো নতুন করে লিখলে (bumpModuleVersion সহ) স্বয়ংক্রিয়ভাবে re-render ট্রিগার করার জন্য। Caller-কে unsubscribe cleanup-এ কল করতে হবে। */
+export function subscribeToModuleData(
+  projectId: string,
+  moduleId: ModuleId,
+  onUpdate: (record: ModuleDataRecord | null) => void
+): Unsubscribe {
+  return onSnapshot(
+    moduleDataRef(projectId, moduleId),
+    (snap) => {
+      if (!snap.exists()) {
+        onUpdate(null)
+        return
+      }
+      onUpdate(toModuleDataRecord(moduleId, snap.data()))
+    },
+    () => onUpdate(null) // Hub-এর কনভেনশন: permission/network error-এ null, ভাঙে না
+  )
+}
+
+/**
+ * Estimating নিজের produce করা module data (BOQ, procurement plan
+ * ইত্যাদি — "Hub-এ ফেরত দেবে" তালিকার অংশ) Hub-এ প্রকাশ করে। merge:true
+ * (Hub-এর কনভেনশন) — আংশিক আপডেটে বাকি field মুছে যায় না।
+ * bumpOwnModuleVersion()-এর version bump এখানে duplicate করা হয়নি;
+ * বরং version নিজে বসিয়ে দেওয়া হয় যাতে moduleData.version সবসময়
+ * versions/estimating.currentVersion-এর সাথে হুবহু sync থাকে — caller
+ * প্রথমে bumpOwnModuleVersion() কল করে newVersion এখানে পাস করবে।
+ */
+export async function saveOwnModuleData(
+  projectId: string,
+  data: Record<string, unknown>,
+  version: number
+): Promise<void> {
+  await setDoc(
+    moduleDataRef(projectId, OUR_APP),
+    { moduleId: OUR_APP, sourceApp: OUR_APP, data, version, updatedAt: serverTimestamp() },
+    { merge: true }
   )
 }

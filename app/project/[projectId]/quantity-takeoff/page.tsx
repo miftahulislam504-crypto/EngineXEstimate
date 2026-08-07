@@ -4,6 +4,14 @@
 // চালানো হতো, এখন useProjectEstimatingData hook এই দায়িত্ব নিয়েছে
 // (refreshQuantity() দিয়ে refetch)। import success হ্যান্ডলার আগের
 // মতোই saveQuantityTakeoff কল করে, তারপর hook refresh করে।
+//
+// sourceVersions (নতুন, optional) — QuantityImportPanel-এর Hub
+// auto-fetch path থেকে আসে (manual JSON/paste path-এ undefined)। save
+// সফল হওয়ার *পরে* linkHubImportDependencies() কল করা হয়, যাতে Hub-এর
+// dependency graph জানে estimating কোন architectural/structural
+// version থেকে এই quantities বানিয়েছে (hub-module-import.ts-এর
+// ফাইল-শীর্ষ নোট দ্রষ্টব্য — link সবসময় সফল-সেভ-হওয়া ডেটার ওপর
+// ভিত্তি করে হওয়া উচিত, তাই এখানে save-এর পরে, best-effort)।
 
 'use client'
 
@@ -14,6 +22,7 @@ import { useProjectEstimatingData } from '@/lib/hooks/useProjectEstimatingData'
 import { QuantityImportPanel } from '@/components/quantity-takeoff/QuantityImportPanel'
 import { QuantityBreakdown } from '@/components/quantity-takeoff/QuantityBreakdown'
 import { saveQuantityTakeoff } from '@/lib/firestore/quantity-takeoff.firestore'
+import { linkHubImportDependencies } from '@/lib/integration/hub-module-import'
 import { QuantityTakeoffExport } from '@/lib/types/quantity-takeoff.types'
 import { useLang } from '@/components/providers/LanguageProvider'
 
@@ -26,11 +35,21 @@ export default function QuantityTakeoffPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [forceImportView, setForceImportView] = useState(false)
 
-  async function handleImportSuccess(payload: QuantityTakeoffExport) {
+  async function handleImportSuccess(
+    payload: QuantityTakeoffExport,
+    sourceVersions?: { architectural: number; structural: number }
+  ) {
     setSaving(true)
     setSaveError(null)
     try {
       await saveQuantityTakeoff(payload)
+      if (sourceVersions) {
+        // best-effort — hub-module-import.ts-এর নিজস্ব try/catch এতে
+        // থাকা সত্ত্বেও এখানে আবার wrap করা হলো না, কারণ
+        // linkHubImportDependencies() নিজেই কখনো throw করে না (ভেতরে
+        // catch করা)
+        await linkHubImportDependencies(projectId, sourceVersions.architectural, sourceVersions.structural)
+      }
       await refreshQuantity()
       setForceImportView(false)
     } catch {
@@ -58,7 +77,7 @@ export default function QuantityTakeoffPage() {
       {saveError && <p className="text-xs text-red-600">{saveError}</p>}
 
       {!quantityData || forceImportView ? (
-        <QuantityImportPanel onImportSuccess={handleImportSuccess} />
+        <QuantityImportPanel projectId={projectId} onImportSuccess={handleImportSuccess} />
       ) : (
         <div className="space-y-4">
           {saving && <p className="text-xs text-text-muted">{t('savingInProgress')}</p>}

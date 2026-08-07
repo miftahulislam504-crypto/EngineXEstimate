@@ -20,6 +20,23 @@ export interface MaterialProcurementNeed {
   totalQuantityNeeded: number
 }
 
+/**
+ * MaterialProcurementNeed-এর labour/equipment সংস্করণ —
+ * resource-rate.types.ts-এর ResourceRate.type ('labour' | 'equipment')
+ * দিয়ে আলাদা করা হয়, যাতে একই shape দুটো ভিন্ন resource category-র
+ * জন্য পুনর্ব্যবহার করা যায় (material-এর মতো আলাদা interface লিখলে
+ * duplicate হতো, কারণ shape হুবহু এক — শুধু concept ভিন্ন)।
+ * unit এখানে সবসময় 'day' বা 'hour' (ResourceRateUnit), কিন্তু string
+ * রাখা হয়েছে MaterialProcurementNeed-এর কনভেনশন অনুসরণ করে।
+ */
+export interface ResourceProcurementNeed {
+  resourceRateId: string
+  resourceName: string
+  resourceType: 'labour' | 'equipment'
+  unit: string
+  totalQuantityNeeded: number
+}
+
 export interface ReinforcementProcurementNeed {
   diameterMm: number
   totalWeightKg: number
