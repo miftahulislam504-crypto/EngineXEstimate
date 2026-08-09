@@ -76,6 +76,19 @@ export function summarizeBBSByDiameter(calculated: BBSRowCalculated[]): Record<n
   return summary
 }
 
+/**
+ * structural member (footing/column/beam/slab/stair) অনুযায়ী গ্রুপ
+ * করে মোট weight — BBS Report (Module 13)-এ member-wise breakdown
+ * দেখানোর জন্য, summarizeBBSByDiameter-এর ঠিক একই প্যাটার্ন।
+ */
+export function summarizeBBSByMember(calculated: BBSRowCalculated[]): Record<string, number> {
+  const summary: Record<string, number> = {}
+  for (const row of calculated) {
+    summary[row.member] = (summary[row.member] ?? 0) + row.totalWeightKg
+  }
+  return summary
+}
+
 export interface BBSValidationResult {
   valid: boolean
   errors: string[]

@@ -1,18 +1,24 @@
 // components/reports/ReportsPanel.tsx
 //
-// Module 13 — এক-ক্লিক export। এই প্রথম ধাপে শুধু PDF (৬টা report);
-// Excel/Word পরের ধাপে এই একই বাটন-গ্রিডে যোগ হবে (প্রতিটা report
-// row-এ format-selector বসিয়ে, নতুন component না বানিয়ে)।
+// Module 13 — এক-ক্লিক export। এই প্রথম ধাপে শুধু PDF (৬টা report +
+// ১টা Master/Full Project Report); Excel/Word পরের ধাপে এই একই
+// বাটন-গ্রিডে যোগ হবে (প্রতিটা report row-এ format-selector বসিয়ে,
+// নতুন component না বানিয়ে)।
 //
 // প্রতিটা report generate করার আগে checkReportsAvailability() দিয়ে
 // ডেটা আছে কিনা যাচাই করা হয় — Dashboard-এর itemsWithoutRateAnalysis-এর
 // একই "silent-omission এড়ানো" নীতি এখানেও: ডেটা না থাকলে বাটন
-// disabled + কারণ দেখানো হয়, চুপচাপ খালি PDF বানানো হয় না।
+// disabled + কারণ দেখানো হয়, চুপচাপ খালি PDF বানানো হয় না। Master
+// Report-এর জন্য এই নীতি একটু ভিন্ন: "কমপক্ষে ১টা section-এ ডেটা
+// থাকলেই" বাটন enable হয় (সব section লাগবে না) — কারণ Master Report
+// নিজেই খালি section বাদ দিয়ে শুধু available section নিয়ে বানায়
+// (master-report.pdf.ts দ্রষ্টব্য), তাই "সব লাগবে" শর্ত দিলে আসলে
+// যা কাজ করে তার চেয়ে বেশি কড়া হয়ে যেত।
 
 'use client'
 
 import { useState, useEffect } from 'react'
-import { FileText, Download, Loader2, AlertCircle, Info } from 'lucide-react'
+import { FileText, FileStack, Download, Loader2, AlertCircle, Info } from 'lucide-react'
 import { useLang } from '@/components/providers/LanguageProvider'
 import {
   checkReportsAvailability,
@@ -30,6 +36,7 @@ import { downloadCostReportPdf } from '@/lib/pdf/cost-report.pdf'
 import { downloadMaterialReportPdf } from '@/lib/pdf/material-report.pdf'
 import { downloadBBSReportPdf } from '@/lib/pdf/bbs-report.pdf'
 import { downloadTenderReportPdf } from '@/lib/pdf/tender-report.pdf'
+import { downloadMasterReportPdf } from '@/lib/pdf/master-report.pdf'
 import { ReportKind } from '@/lib/types/reports.types'
 import type { TranslationKey } from '@/lib/i18n'
 
@@ -46,6 +53,7 @@ const REPORT_LABEL_KEYS: Record<ReportKind, TranslationKey> = {
   material: 'materialReportLabel',
   bbs: 'bbsReportLabel',
   tender: 'tenderReportLabel',
+  master: 'masterReportLabel',
 }
 
 const REPORT_UNAVAILABLE_KEYS: Record<ReportKind, TranslationKey> = {
@@ -55,9 +63,10 @@ const REPORT_UNAVAILABLE_KEYS: Record<ReportKind, TranslationKey> = {
   material: 'reportUnavailableMaterial',
   bbs: 'reportUnavailableBbs',
   tender: 'reportUnavailableTender',
+  master: 'reportUnavailableMaster',
 }
 
-const REPORT_KINDS: ReportKind[] = ['boq', 'quantity', 'cost', 'material', 'bbs', 'tender']
+const REPORT_KINDS: Exclude<ReportKind, 'master'>[] = ['boq', 'quantity', 'cost', 'material', 'bbs', 'tender']
 
 export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPanelProps) {
   const { t } = useLang()
@@ -116,6 +125,24 @@ export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPan
           downloadTenderReportPdf(context, meta)
           break
         }
+        case 'master': {
+          // প্রতিটা section-এর context আলাদাভাবে fetch — একটা section
+          // fetch fail করলেও (যেমন কোনো project-এ tender ডেটা নেই)
+          // Promise.all reject হয়ে পুরো Master Report আটকে যাবে না,
+          // কারণ প্রতিটা build*ReportContext() নিজেই "নেই" অবস্থা
+          // handle করে খালি/ডিফল্ট context রিটার্ন করে (throw করে না)।
+          const [boq, quantity, cost, material, bbs, tender] = await Promise.all([
+            buildBOQReportContext(projectId),
+            buildQuantityReportContext(projectId),
+            buildCostReportContext(projectId),
+            buildMaterialReportContext(),
+            buildBBSReportContext(projectId),
+            buildTenderReportContext(projectId),
+          ])
+          const currentAvailability = availability ?? (await checkReportsAvailability(projectId))
+          downloadMasterReportPdf({ availability: currentAvailability, boq, quantity, cost, material, bbs, tender }, meta)
+          break
+        }
       }
     } catch {
       setError(t('reportGenerationFailed'))
@@ -127,6 +154,9 @@ export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPan
   if (loading) {
     return <p className="text-sm text-text-muted">{t('loading')}</p>
   }
+
+  const isMasterAvailable = availability ? Object.values(availability).some(Boolean) : false
+  const isMasterGenerating = generating === 'master'
 
   return (
     <div className="space-y-4">
@@ -149,6 +179,39 @@ export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPan
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}
+
+      {/* Master Report — গ্রিডের বাইরে, উপরে; সবচেয়ে বেশি ব্যবহৃত
+          হবে বলে ধরে নিয়ে আলাদা highlighted card, brand-color বর্ডার
+          দিয়ে বাকি ৬টা থেকে আলাদা করা */}
+      <div className="card p-4 border-brand-200 bg-brand-50/40 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <FileStack size={20} className="text-brand-600 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-text-primary truncate">{t('masterReportLabel')}</p>
+            <p className="text-xs text-text-muted mt-0.5">{t('masterReportDescription')}</p>
+            {!isMasterAvailable && (
+              <p className="text-xs text-text-muted mt-1">{t(REPORT_UNAVAILABLE_KEYS.master)}</p>
+            )}
+          </div>
+        </div>
+        <button
+          className="btn-primary text-xs py-1.5 px-3 shrink-0"
+          disabled={!isMasterAvailable || isMasterGenerating}
+          onClick={() => handleGenerate('master')}
+        >
+          {isMasterGenerating ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              {t('generatingReport')}
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              {t('downloadBtn')}
+            </>
+          )}
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {REPORT_KINDS.map((kind) => {

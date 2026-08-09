@@ -6,17 +6,44 @@
 // breakdown-ও যোগ করা হয়েছে (summarizeBBSByDiameter — Module 8
 // Procurement-এ যেটা ইতিমধ্যে ব্যবহৃত হচ্ছে, রিপোর্টেও একই ব্রেকডাউন
 // দেখানো সংগত)।
+//
+// ── Phase 4 আপগ্রেড ──────────────────────────────────────────────
+// cover page, diameter breakdown এখন pie chart সহ, member-wise
+// (footing/column/beam/slab/stair) breakdown নতুন যোগ হয়েছে
+// (summarizeBBSByMember — reinforcement.service.ts-এ
+// summarizeBBSByDiameter-এর পাশে নতুন export, একই প্যাটার্নে), এবং
+// warnings এখন styled warning callout box-এ (আগে plain রঙিন টেক্সট)।
+//
+// ── Phase 5 রিফ্যাক্টর ───────────────────────────────────────────
+// body-drawing লজিক drawBBSReportBody()-এ বের করা হয়েছে, যাতে
+// master-report.pdf.ts এটা নিজের multi-section doc-এ reuse করতে
+// পারে। ⚠️ এই report landscape (column-ভারী table বলে), বাকি সব
+// report portrait — তাই master-report.pdf.ts-কে page-level
+// orientation switch করতে হয় এই section-এ ঢোকা ও বের হওয়ার সময়
+// (jsPDF-এ addPage(format, orientation) প্রতি-পাতা orientation
+// সাপোর্ট করে বলে সম্ভব)। এই ফাইলে caller-কে boundary-তে orientation
+// সামলাতে হবে বলে ধরে নেওয়া হয়েছে — drawBBSReportBody() নিজে থেকে
+// কোনো addPage('a4', 'landscape') কল করবে না প্রথম পাতায়, কিন্তু
+// এর ভেতরের দ্বিতীয় পাতা-বিভাজন (schedule table বড় বলে) এখনো
+// landscape-ই বহাল রাখে, কারণ সেটা caller-এর orientation switch-এর
+// পরের ধাপ।
 
 import jsPDF from 'jspdf'
 import { BBSReportContext } from '@/lib/services/reports.service'
-import { calculateBBSRows, summarizeBBSByDiameter } from '@/lib/services/reinforcement.service'
+import { calculateBBSRows, summarizeBBSByDiameter, summarizeBBSByMember } from '@/lib/services/reinforcement.service'
 import {
   drawPdfHeader,
   drawPdfFooter,
+  drawCoverPage,
   drawPdfTable,
   drawSectionTitle,
   drawSummaryLine,
+  drawCalloutBox,
+  renderPieChartImage,
+  addChartImage,
   downloadPdf,
+  buildReportFilename,
+  formatQty,
   PdfReportMeta,
 } from '@/lib/pdf/pdf-shared'
 
@@ -36,15 +63,20 @@ const MEMBER_LABELS: Record<string, string> = {
   stair: 'Stair',
 }
 
-export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const doc = new jsPDF({ orientation: 'landscape' })
-  let y = drawPdfHeader(doc, { ...meta, reportTitle: 'Bar Bending Schedule (BBS)' })
+/**
+ * BBS section-এর মূল কন্টেন্ট আঁকে। startY-তে caller ইতিমধ্যে একটা
+ * landscape পাতায় drawPdfHeader() কল করে থাকবে বলে ধরে নেওয়া
+ * হয়েছে। এই ফাংশনের ভেতরের doc.addPage() কলগুলো সব ('a4','landscape')
+ * সহ, তাই caller-এর orientation বজায় থাকে যতক্ষণ caller নিজে থেকে
+ * অন্য orientation-এ switch না করে।
+ */
+export function drawBBSReportBody(doc: jsPDF, context: BBSReportContext, startY: number, reportMeta: PdfReportMeta): number {
+  let y = startY
 
   if (context.rows.length === 0) {
     doc.setFontSize(10)
     doc.text('No BBS rows found for this project yet.', 14, y)
-    drawPdfFooter(doc)
-    return doc
+    return y + 8
   }
 
   // calculateBBSRows()-এর warnings বাংলায় লেখা (reinforcement.service.ts
@@ -57,8 +89,41 @@ export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfRe
     .filter((row) => row.effectiveUnitWeightKgPerM === 0)
     .map((row) => `"${row.barMark}" (${row.diameterMm}mm) — no standard unit weight found; treated as 0 kg/m.`)
 
-  y = drawSummaryLine(doc, 'Total Reinforcement Weight', `${context.totalWeightKg.toLocaleString('en-US', { maximumFractionDigits: 1 })} kg`, y)
+  y = drawSummaryLine(doc, 'Total Reinforcement Weight', `${formatQty(context.totalWeightKg, 1)} kg`, y, reportMeta)
   y += 4
+
+  // ── Diameter breakdown — pie chart ──
+  const byDiameter = summarizeBBSByDiameter(calculated)
+  const diameters = Object.keys(byDiameter).map(Number).sort((a, b) => a - b)
+  const byMember = summarizeBBSByMember(calculated)
+  const members = Object.keys(byMember)
+
+  if (diameters.length > 1) {
+    y = drawSectionTitle(doc, 'Weight Breakdown by Diameter', y, reportMeta)
+    const diaChartData = diameters.map((d) => ({ label: `${d}mm`, value: byDiameter[d] }))
+    const diaDataUrl = renderPieChartImage(diaChartData, {
+      valueFormatter: (v) => `${formatQty(v, 1)} kg`,
+      widthPx: 620,
+      heightPx: 300,
+    })
+    y = addChartImage(doc, diaDataUrl, y, { widthMm: 120, aspectRatio: 620 / 300 })
+  }
+
+  // ── Member-wise breakdown table (footing/column/beam/slab/stair) ──
+  if (members.length > 0) {
+    y = drawSectionTitle(doc, 'Weight Breakdown by Member', y, reportMeta)
+    const memberHead = [['Member', 'Total Weight (kg)']]
+    const memberBody = members
+      .sort((a, b) => byMember[b] - byMember[a])
+      .map((m) => [MEMBER_LABELS[m] ?? m, formatQty(byMember[m])])
+    y = drawPdfTable(doc, y, memberHead, memberBody, {
+      columnStyles: { 0: { cellWidth: 40 }, 1: { halign: 'right' } },
+    })
+  }
+
+  doc.addPage('a4', 'landscape')
+  y = drawPdfHeader(doc, reportMeta)
+  y = drawSectionTitle(doc, 'Bar Bending Schedule', y, reportMeta)
 
   const head = [
     ['Bar Mark', 'Member', 'Dia (mm)', 'Shape', 'Cutting Len (m)', 'Nos', 'Total Len (m)', 'Unit Wt (kg/m)', 'Wastage %', 'Total Wt (kg)'],
@@ -68,41 +133,55 @@ export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfRe
     MEMBER_LABELS[row.member] ?? row.member,
     String(row.diameterMm),
     SHAPE_LABELS[row.shape] ?? row.shape,
-    row.cuttingLengthM.toFixed(2),
+    formatQty(row.cuttingLengthM),
     String(row.numberOfBars),
-    row.totalLengthM.toFixed(2),
-    row.effectiveUnitWeightKgPerM.toFixed(3),
-    row.wastagePercent.toFixed(1),
-    row.totalWeightKg.toFixed(2),
+    formatQty(row.totalLengthM),
+    formatQty(row.effectiveUnitWeightKgPerM, 3),
+    formatQty(row.wastagePercent, 1),
+    formatQty(row.totalWeightKg),
   ])
 
   y = drawPdfTable(doc, y, head, body, { columnStyles: { 9: { halign: 'right' } } })
 
-  const byDiameter = summarizeBBSByDiameter(calculated)
-  const diameters = Object.keys(byDiameter).map(Number).sort((a, b) => a - b)
   if (diameters.length > 0) {
-    y = drawSectionTitle(doc, 'Weight Breakdown by Diameter', y)
+    y = drawSectionTitle(doc, 'Weight Breakdown by Diameter', y, reportMeta)
     const diaHead = [['Diameter (mm)', 'Total Weight (kg)']]
-    const diaBody = diameters.map((d) => [`${d}mm`, byDiameter[d].toFixed(2)])
+    const diaBody = diameters.map((d) => [`${d}mm`, formatQty(byDiameter[d])])
     y = drawPdfTable(doc, y, diaHead, diaBody, { columnStyles: { 0: { cellWidth: 40 } } })
   }
 
   if (warnings.length > 0) {
-    doc.setFontSize(9)
-    doc.setTextColor(180, 60, 20)
-    doc.text('Warnings:', 14, y)
-    y += 5
-    warnings.forEach((w) => {
-      doc.text(`- ${w}`, 18, y)
-      y += 4.5
-    })
+    y = drawCalloutBox(doc, ['Warnings:', ...warnings.map((w) => `-  ${w}`)], y, 'warning', reportMeta)
   }
 
-  drawPdfFooter(doc)
+  return y
+}
+
+export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta = { ...meta, reportTitle: 'Bar Bending Schedule (BBS)' }
+
+  if (context.rows.length === 0) {
+    const y = drawPdfHeader(doc, reportMeta)
+    drawBBSReportBody(doc, context, y, reportMeta)
+    drawPdfFooter(doc)
+    return doc
+  }
+
+  const { calculated } = calculateBBSRows(context.rows)
+  drawCoverPage(doc, reportMeta, {
+    subtitle: `${calculated.length} bar mark${calculated.length === 1 ? '' : 's'} — ${formatQty(context.totalWeightKg, 1)} kg total`,
+  })
+
+  doc.addPage('a4', 'landscape')
+  const y = drawPdfHeader(doc, reportMeta)
+  drawBBSReportBody(doc, context, y, reportMeta)
+
+  drawPdfFooter(doc, { startPage: 2 })
   return doc
 }
 
 export function downloadBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
   const doc = generateBBSReportPdf(context, meta)
-  downloadPdf(doc, `BBS_Report_${meta.projectName.replace(/\s+/g, '_')}.pdf`)
+  downloadPdf(doc, buildReportFilename('BBS_Report', meta.projectName, meta.generatedAt))
 }

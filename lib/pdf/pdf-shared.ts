@@ -21,6 +21,18 @@
 // bn PDF দরকার হলে একটা বাংলা Unicode font (যেমন Noto Sans Bengali)
 // jsPDF-এ addFont() দিয়ে embed করতে হবে — এই মুহূর্তে সেই font ফাইল
 // bundle-এ নেই বলে করা হয়নি।
+//
+// ── Phase 1 (Professional report upgrade) ───────────────────────────
+// এই ফাইলে যোগ হয়েছে: cover page, vector logo mark (Logo.tsx-এর
+// SVG path-এর jsPDF সংস্করণ — কোনো raster PNG asset ছাড়াই, তাই
+// Logo.tsx যে সমস্যা (public/logo.png প্রজেক্টে ছিলই না) এড়ানো
+// যায়), watermark (DRAFT/FINAL), table-of-contents helper, এবং
+// canvas-ভিত্তিক bar/pie chart helper (কোনো নতুন npm dependency
+// ছাড়াই — Chart.js বা অন্য লাইব্রেরি যোগ করলে GitHub→Vercel push
+// এর আগে npm লাগত, যা এই ecosystem-এর মোবাইল-first ওয়ার্কফ্লোর
+// সাথে সাংঘর্ষিক; তাই plain <canvas> দিয়ে চার্ট এঁকে doc.addImage()
+// দিয়ে বসানো হচ্ছে)। বাকি সব পুরনো helper (drawPdfHeader ইত্যাদি)
+// অপরিবর্তিত আছে — builder ফাইলগুলো ভাঙবে না।
 
 import jsPDF from 'jspdf'
 import autoTable, { RowInput } from 'jspdf-autotable'
@@ -39,7 +51,24 @@ declare module 'jspdf' {
 }
 
 export const PDF_BRAND_COLOR: [number, number, number] = [67, 56, 202] // EngineX Quanta brand-700 ইন্ডিগো, globals.css টোকেনের সাথে সামঞ্জস্যপূর্ণ
+export const PDF_BRAND_COLOR_LIGHT: [number, number, number] = [14, 165, 233] // brand gradient-এর cyan প্রান্ত (Logo.tsx-এর exq-grad stop)
 export const PDF_MUTED_COLOR: [number, number, number] = [107, 114, 128]
+export const PDF_WARN_COLOR: [number, number, number] = [180, 60, 20]
+export const PDF_SUCCESS_COLOR: [number, number, number] = [22, 130, 90]
+
+// একাধিক chart-এ ধারাবাহিকভাবে ব্যবহারের জন্য একটা ছোট categorical
+// palette — brand color দিয়ে শুরু, তারপর দৃশ্যমানভাবে আলাদা করা
+// যায় এমন রঙ (accessible bar/pie chart-এর জন্য যথেষ্ট contrast)।
+export const PDF_CHART_PALETTE: [number, number, number][] = [
+  [67, 56, 202], // indigo (brand)
+  [14, 165, 233], // sky
+  [22, 163, 74], // green
+  [217, 119, 6], // amber
+  [220, 38, 38], // red
+  [147, 51, 234], // purple
+  [8, 145, 178], // cyan-dark
+  [107, 114, 128], // grey (fallback/other)
+]
 
 export interface PdfReportMeta {
   reportTitle: string // ইংরেজিতেই থাকবে, উপরের নোট দেখুন
@@ -49,27 +78,76 @@ export interface PdfReportMeta {
 }
 
 /**
+ * Logo.tsx-এর SVG মার্কের jsPDF vector সংস্করণ — rounded-rect
+ * ব্যাকগ্রাউন্ড (gradient-এর কাছাকাছি solid brand color, jsPDF-এর
+ * vector API-তে true SVG gradient টানা যায় না বলে) + সাদা "Q" রিং
+ * + টেইল + দুইটা bar-chart টিক। কোনো external image asset লাগে না,
+ * তাই স্কেল করলেও ঝাপসা হয় না এবং bundle-এ কোনো ফাইল bundle করতে
+ * হয় না।
+ */
+export function drawLogoMark(doc: jsPDF, x: number, y: number, size: number): void {
+  const r = size * 0.28
+
+  doc.setFillColor(...PDF_BRAND_COLOR)
+  doc.roundedRect(x, y, size, size, r, r, 'F')
+
+  const cx = x + size / 2
+  const cy = y + size / 2
+  const radius = size * 0.22
+
+  doc.setDrawColor(255, 255, 255)
+  doc.setLineWidth(size * 0.075)
+  // "Q" রিং — প্রায়-সম্পূর্ণ বৃত্ত, ছোট ছোট line segment দিয়ে আঁকা
+  // (jsPDF-এ arc-stroke সরাসরি নেই বলে lines() দিয়ে approximate)
+  const startAngle = -40
+  const endAngle = 270
+  const steps = 24
+  const points: number[] = []
+  for (let i = 0; i <= steps; i++) {
+    const angle = ((startAngle + ((endAngle - startAngle) * i) / steps) * Math.PI) / 180
+    points.push(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle))
+  }
+  for (let i = 0; i < points.length - 2; i += 2) {
+    doc.line(points[i], points[i + 1], points[i + 2], points[i + 3])
+  }
+  // Q-এর টেইল
+  const tailStart = {
+    x: cx + radius * Math.cos((-15 * Math.PI) / 180),
+    y: cy + radius * Math.sin((-15 * Math.PI) / 180),
+  }
+  doc.line(tailStart.x - size * 0.02, tailStart.y - size * 0.02, x + size * 0.78, y + size * 0.82)
+
+  // ভেতরের bar-chart টিক
+  doc.setFillColor(255, 255, 255)
+  doc.rect(x + size * 0.39, y + size * 0.52, size * 0.06, size * 0.16, 'F')
+  doc.rect(x + size * 0.5, y + size * 0.42, size * 0.06, size * 0.26, 'F')
+}
+
+/**
  * প্রতিটা report PDF-এর প্রথম পাতার উপরে বসানো standard header —
- * app name, report title, project name/code, generated-at timestamp।
+ * app name (vector logo mark সহ), report title, project name/code,
+ * generated-at timestamp।
  * Returns the Y position where the caller should start drawing body content.
  */
 export function drawPdfHeader(doc: jsPDF, meta: PdfReportMeta): number {
   const pageWidth = doc.internal.pageSize.getWidth()
 
+  drawLogoMark(doc, 14, 8, 9)
+
   doc.setFontSize(9)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.text('EngineX Quanta', 14, 12)
+  doc.text('EngineX Quanta', 26, 13)
 
   doc.setFontSize(16)
   doc.setTextColor(20, 20, 20)
   doc.setFont('helvetica', 'bold')
-  doc.text(meta.reportTitle, 14, 22)
+  doc.text(meta.reportTitle, 14, 25)
   doc.setFont('helvetica', 'normal')
 
   doc.setFontSize(10)
   doc.setTextColor(60, 60, 60)
   const projectLine = meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName
-  doc.text(projectLine, 14, 29)
+  doc.text(projectLine, 14, 32)
 
   doc.setFontSize(8)
   doc.setTextColor(...PDF_MUTED_COLOR)
@@ -77,23 +155,29 @@ export function drawPdfHeader(doc: jsPDF, meta: PdfReportMeta): number {
   doc.text(generatedLabel, pageWidth - 14, 12, { align: 'right' })
 
   doc.setDrawColor(...PDF_BRAND_COLOR)
-  doc.setLineWidth(0.5)
-  doc.line(14, 33, pageWidth - 14, 33)
+  doc.setLineWidth(0.6)
+  doc.line(14, 36, pageWidth - 14, 36)
 
-  return 40
+  return 43
 }
 
 /**
  * প্রতিটা পাতার নিচে page number — multi-page report-এ (BOQ, BBS
- * বড় হতে পারে) কোন পাতা কততম তা বোঝার জন্য জরুরি।
+ * বড় হতে পারে) কোন পাতা কততম তা বোঝার জন্য জরুরি। startPage দিয়ে
+ * নির্দিষ্ট রেঞ্জ থেকে ফুটার বসানো যায় (যেমন cover page-এর পরের
+ * পাতাগুলোতে, cover page নিজে বাদ দিয়ে)।
  */
-export function drawPdfFooter(doc: jsPDF): void {
+export function drawPdfFooter(doc: jsPDF, options?: { startPage?: number }): void {
   const pageCount = doc.getNumberOfPages()
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
+  const startPage = options?.startPage ?? 1
 
-  for (let i = 1; i <= pageCount; i++) {
+  for (let i = startPage; i <= pageCount; i++) {
     doc.setPage(i)
+    doc.setDrawColor(225, 225, 225)
+    doc.setLineWidth(0.2)
+    doc.line(14, pageHeight - 13, pageWidth - 14, pageHeight - 13)
     doc.setFontSize(8)
     doc.setTextColor(...PDF_MUTED_COLOR)
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' })
@@ -102,9 +186,143 @@ export function drawPdfFooter(doc: jsPDF): void {
 }
 
 /**
- * autoTable-এর জন্য common styling — head সবুজ (brand color),
- * alternate row shading, ছোট font (BOQ/BBS-এর মতো column-ভারী
- * table-এ readability-র জন্য জরুরি)।
+ * একটা পূর্ণ cover/title page — বড় logo, report title, project
+ * name/code, generated-at, ও (থাকলে) একটা subtitle লাইন (যেমন
+ * "6 of 6 sections included")। এর পরে caller নতুন doc.addPage()
+ * করে বডি কন্টেন্ট শুরু করবে বলে ধরে নেওয়া হয়েছে — তাই এই ফাংশন
+ * pageCount বা Y-position রিটার্ন করে না।
+ *
+ * ব্যবহার ঐচ্ছিক: ছোট/simple রিপোর্টে (single-table) শুধু
+ * drawPdfHeader ব্যবহার চালিয়ে যাওয়া যায়; cover page মূলত multi-
+ * section রিপোর্ট (Cost, Tender, Master Report) ও দৃশ্যমান
+ * professional presentation-এর জন্য।
+ */
+export function drawCoverPage(
+  doc: jsPDF,
+  meta: PdfReportMeta,
+  options?: { subtitle?: string; watermark?: 'DRAFT' | 'FINAL' }
+): void {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const cx = pageWidth / 2
+
+  // উপরের brand color band
+  doc.setFillColor(...PDF_BRAND_COLOR)
+  doc.rect(0, 0, pageWidth, 4, 'F')
+
+  // কেন্দ্রে বড় logo mark
+  const logoSize = 26
+  drawLogoMark(doc, cx - logoSize / 2, 55, logoSize)
+
+  doc.setFontSize(11)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.setFont('helvetica', 'normal')
+  doc.text('EngineX Quanta', cx, 95, { align: 'center' })
+
+  doc.setFontSize(24)
+  doc.setTextColor(20, 20, 20)
+  doc.setFont('helvetica', 'bold')
+  doc.text(meta.reportTitle, cx, 112, { align: 'center' })
+  doc.setFont('helvetica', 'normal')
+
+  if (options?.subtitle) {
+    doc.setFontSize(11)
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    doc.text(options.subtitle, cx, 121, { align: 'center' })
+  }
+
+  // প্রজেক্ট তথ্যের বক্স
+  const boxY = 140
+  doc.setDrawColor(225, 225, 225)
+  doc.setLineWidth(0.3)
+  doc.roundedRect(cx - 60, boxY, 120, 34, 3, 3, 'S')
+
+  doc.setFontSize(9)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.text('PROJECT', cx, boxY + 10, { align: 'center' })
+  doc.setFontSize(13)
+  doc.setTextColor(20, 20, 20)
+  doc.setFont('helvetica', 'bold')
+  const projectLine = meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName
+  doc.text(projectLine, cx, boxY + 18, { align: 'center' })
+  doc.setFont('helvetica', 'normal')
+
+  doc.setFontSize(9)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  const generatedLabel = `Generated on ${new Date(meta.generatedAt).toLocaleString('en-US')}`
+  doc.text(generatedLabel, cx, boxY + 27, { align: 'center' })
+
+  // Watermark (diagonal, হালকা) — চাইলে DRAFT/FINAL স্ট্যাম্প
+  if (options?.watermark) {
+    doc.setFontSize(60)
+    doc.setTextColor(230, 230, 230)
+    doc.setFont('helvetica', 'bold')
+    doc.text(options.watermark, cx, pageHeight / 2 + 20, {
+      align: 'center',
+      angle: 35,
+    })
+    doc.setFont('helvetica', 'normal')
+  }
+
+  // নিচে brand color band + tagline
+  doc.setFillColor(...PDF_BRAND_COLOR)
+  doc.rect(0, pageHeight - 4, pageWidth, 4, 'F')
+  doc.setFontSize(8)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.text('Construction estimating, quantity takeoff & cost management', cx, pageHeight - 12, { align: 'center' })
+}
+
+/**
+ * Table-of-contents পাতা — multi-section রিপোর্টে (Cost, Tender,
+ * ভবিষ্যতে Master Report) কোন section কোন পাতায় আছে তা দেখানোর
+ * জন্য। entries-এ pageNumber ফাঁকা রাখা যায় যদি builder আগে থেকে
+ * জানে না (caller draw করার পরে numbering বসাতে চাইলে পরে
+ * doc.setPage() দিয়ে ফিরে গিয়ে টেক্সট বসিয়ে দিতে পারে) — কিন্তু
+ * সরল ব্যবহারে entries পুরোপুরি প্রি-কম্পিউটেড থাকবে বলে ধরা হয়েছে।
+ */
+export function drawTableOfContents(
+  doc: jsPDF,
+  entries: { label: string; pageNumber: number }[]
+): void {
+  doc.setFontSize(16)
+  doc.setTextColor(20, 20, 20)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Contents', 14, 20)
+  doc.setFont('helvetica', 'normal')
+
+  doc.setDrawColor(...PDF_BRAND_COLOR)
+  doc.setLineWidth(0.6)
+  doc.line(14, 24, 60, 24)
+
+  let y = 38
+  const pageWidth = doc.internal.pageSize.getWidth()
+  entries.forEach((entry, i) => {
+    doc.setFontSize(11)
+    doc.setTextColor(40, 40, 40)
+    doc.text(`${i + 1}.  ${entry.label}`, 18, y)
+
+    // dotted leader line
+    const labelWidth = doc.getTextWidth(`${i + 1}.  ${entry.label}`)
+    const dotsStartX = 18 + labelWidth + 3
+    const dotsEndX = pageWidth - 24
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    if (dotsEndX > dotsStartX) {
+      doc.setLineDashPattern([0.6, 1.2], 0)
+      doc.setDrawColor(180, 180, 180)
+      doc.line(dotsStartX, y - 1, dotsEndX, y - 1)
+      doc.setLineDashPattern([], 0)
+    }
+
+    doc.setTextColor(40, 40, 40)
+    doc.text(String(entry.pageNumber), pageWidth - 14, y, { align: 'right' })
+    y += 9
+  })
+}
+
+/**
+ * autoTable-এর জন্য common styling — head brand color, alternate
+ * row shading, ছোট font (BOQ/BBS-এর মতো column-ভারী table-এ
+ * readability-র জন্য জরুরি)।
  */
 export function drawPdfTable(
   doc: jsPDF,
@@ -132,13 +350,47 @@ export function drawPdfTable(
 
 /**
  * একটা section sub-heading (যেমন "Material Cost", "Comparative
- * Statement") — table-এর আগে দাগ কেটে দেওয়ার জন্য।
+ * Statement") — table-এর আগে দাগ কেটে দেওয়ার জন্য। একটা ছোট বাম-
+ * পাশের brand-color accent bar সহ, যাতে section boundary চোখে
+ * সহজে পড়ে (plain bold text-এর চেয়ে বেশি "printed report" অনুভূতি)।
  */
-export function drawSectionTitle(doc: jsPDF, title: string, y: number): number {
+
+/**
+ * পাতার নিচের দিকে যথেষ্ট জায়গা আছে কিনা যাচাই করে — না থাকলে নতুন
+ * পাতা যোগ করে (reportMeta দেওয়া থাকলে drawPdfHeader() দিয়ে সেই
+ * নতুন পাতায় হেডারও বসায়) এবং content শুরুর নতুন Y রিটার্ন করে।
+ * reportMeta না দিলে (ঐচ্ছিক, backward-compat কারণে) শুধু raw
+ * doc.addPage() করে, কোনো header ছাড়া।
+ *
+ * ── Phase 6 (Polish) ────────────────────────────────────────────
+ * jspdf-autotable নিজে থেকেই table-এর page-break handle করে (row
+ * মাঝপথে কাটে না, এটা library-এর default আচরণ) — কিন্তু
+ * drawSectionTitle/drawSummaryLine/drawStatCards/drawCalloutBox এই
+ * ফাংশনগুলো raw Y-কো-অর্ডিনেটে সরাসরি আঁকত, পাতার নিচে জায়গা আছে
+ * কিনা না দেখেই। ফলে কোনো table-এর ঠিক পরেই যদি warning callout box
+ * বা summary line আসত এবং সেটা পাতার একদম শেষে পড়ে যেত, তাহলে সেই
+ * অংশ কেটে পাতার বাইরে চলে যেত (invisible)। এখন এই helper সেই
+ * ফাংশনগুলোর শুরুতে বসিয়ে না-থাকা জায়গা আগেই ধরা হচ্ছে।
+ */
+function ensureSpace(doc: jsPDF, y: number, neededHeight: number, reportMeta?: PdfReportMeta): number {
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const bottomMargin = 18 // drawPdfFooter()-এর জায়গা রাখার জন্য
+  if (y + neededHeight > pageHeight - bottomMargin) {
+    doc.addPage()
+    return reportMeta ? drawPdfHeader(doc, reportMeta) : 20
+  }
+  return y
+}
+
+export function drawSectionTitle(doc: jsPDF, title: string, y: number, reportMeta?: PdfReportMeta): number {
+  y = ensureSpace(doc, y, 10, reportMeta)
+  doc.setFillColor(...PDF_BRAND_COLOR)
+  doc.rect(14, y - 4, 1.2, 5.5, 'F')
+
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(20, 20, 20)
-  doc.text(title, 14, y)
+  doc.text(title, 18, y)
   doc.setFont('helvetica', 'normal')
   return y + 6
 }
@@ -147,7 +399,8 @@ export function drawSectionTitle(doc: jsPDF, title: string, y: number): number {
  * একটা key-value সারাংশ লাইন (যেমন "Total Project Cost: ৳12,34,500")
  * — table-এর বাইরে বড় summary number দেখানোর জন্য।
  */
-export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: number): number {
+export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: number, reportMeta?: PdfReportMeta): number {
+  y = ensureSpace(doc, y, 8, reportMeta)
   doc.setFontSize(10)
   doc.setTextColor(60, 60, 60)
   doc.text(label, 14, y)
@@ -158,12 +411,351 @@ export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: num
   return y + 6
 }
 
+/**
+ * Dashboard-স্টাইল "stat card" গ্রিড — একাধিক key metric পাশাপাশি
+ * বক্সে দেখানোর জন্য (যেমন Cost Report-এ Material/Labour/Equipment/
+ * Total একসাথে চারটা বক্সে)। boxes.length অনুযায়ী সমান-প্রস্থে
+ * ভাগ হয়ে যায়। Phase 2+ (Cost/Tender) থেকে ব্যবহার হবে।
+ */
+export function drawStatCards(
+  doc: jsPDF,
+  boxes: { label: string; value: string; accent?: [number, number, number] }[],
+  y: number,
+  reportMeta?: PdfReportMeta
+): number {
+  const boxHeight = 22
+  y = ensureSpace(doc, y, boxHeight, reportMeta)
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 14
+  const gap = 4
+  const totalWidth = pageWidth - margin * 2
+  const boxWidth = (totalWidth - gap * (boxes.length - 1)) / boxes.length
+
+  boxes.forEach((box, i) => {
+    const x = margin + i * (boxWidth + gap)
+    const accent = box.accent ?? PDF_BRAND_COLOR
+
+    doc.setDrawColor(230, 230, 230)
+    doc.setLineWidth(0.3)
+    doc.roundedRect(x, y, boxWidth, boxHeight, 2, 2, 'S')
+
+    doc.setFillColor(...accent)
+    doc.roundedRect(x, y, 1.5, boxHeight, 0.75, 0.75, 'F')
+
+    doc.setFontSize(7.5)
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    doc.text(box.label.toUpperCase(), x + 5, y + 8, { maxWidth: boxWidth - 8 })
+
+    doc.setFontSize(11.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(20, 20, 20)
+    doc.text(box.value, x + 5, y + 17, { maxWidth: boxWidth - 8 })
+    doc.setFont('helvetica', 'normal')
+  })
+
+  return y + boxHeight + 8
+}
+
+/**
+ * একটা styled callout/note box — info (নীল), warning (কমলা), বা
+ * success (সবুজ) — warnings/notes-কে plain রঙিন টেক্সটের বদলে একটা
+ * bordered box-এ দেখানোর জন্য (BBS warnings, Cost-এর
+ * itemsWithoutRateAnalysis, ইত্যাদির জন্য Phase 2+ এ ব্যবহার হবে)।
+ * lines[] প্রতিটা আলাদা bullet/লাইন হিসেবে বসে। রিটার্ন করে পরের
+ * কন্টেন্টের Y-position।
+ */
+export function drawCalloutBox(
+  doc: jsPDF,
+  lines: string[],
+  y: number,
+  variant: 'info' | 'warning' | 'success' = 'info',
+  reportMeta?: PdfReportMeta
+): number {
+  const palette: Record<typeof variant, { border: [number, number, number]; bg: [number, number, number]; text: [number, number, number] }> = {
+    info: { border: [199, 210, 254], bg: [238, 242, 255], text: [55, 48, 163] },
+    warning: { border: [253, 224, 171], bg: [255, 247, 237], text: PDF_WARN_COLOR },
+    success: { border: [187, 247, 208], bg: [240, 253, 244], text: PDF_SUCCESS_COLOR },
+  }
+  const c = palette[variant]
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const boxWidth = pageWidth - 28
+  const lineHeight = 4.6
+  const padding = 4
+  const boxHeight = padding * 2 + lines.length * lineHeight
+
+  y = ensureSpace(doc, y, boxHeight, reportMeta)
+
+  doc.setFillColor(...c.bg)
+  doc.setDrawColor(...c.border)
+  doc.setLineWidth(0.3)
+  doc.roundedRect(14, y, boxWidth, boxHeight, 2, 2, 'FD')
+
+  doc.setFontSize(8.5)
+  doc.setTextColor(...c.text)
+  let lineY = y + padding + 3.2
+  lines.forEach((line) => {
+    doc.text(line, 18, lineY, { maxWidth: boxWidth - 8 })
+    lineY += lineHeight
+  })
+
+  return y + boxHeight + 6
+}
+
 export function formatTaka(amount: number): string {
   // jsPDF-এর built-in font-এ ৳ glyph নেই বলে "Tk" ব্যবহার করা হচ্ছে,
-  // ৳ প্রতীক দিলে সেই জায়গায় খালি বক্স/বিকৃত glyph দেখাবে।
-  return `Tk ${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+  // ৳ প্রতীক দিলে সেই জায়গায় খালি বক্স/বিকৃত glyph দেখাবে। min ও max
+  // fraction digits একই (2) রাখা হয়েছে — নাহলে কোনো টাকা "Tk 1500"
+  // আর কোনো টাকা "Tk 1500.5" দেখাত (inconsistent decimal count),
+  // financial figure-এ যেটা অপেশাদার দেখায়।
+  return `Tk ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/**
+ * quantity/measurement সংখ্যা (BOQ quantity, area, volume ইত্যাদি)
+ * ফরম্যাট করার জন্য একটা কেন্দ্রীয় helper — Phase 6 (Polish)-এর
+ * আগে একই BOQItem.quantity ফিল্ড কোথাও 3-decimal-limit সহ
+ * (boq-report.pdf.ts) আর কোথাও কোনো limit ছাড়া (cost-report.pdf.ts)
+ * ফরম্যাট হতো, একই ডেটা দুই রিপোর্টে দুই রকম দেখাত। এখন সব জায়গায়
+ * এই একটা ফাংশন — decimals প্যারামিটার দিয়ে প্রয়োজনমতো precision
+ * (যেমন weight-এর জন্য 1-2, দৈর্ঘ্যের জন্য 2-3) কনফিগারযোগ্য, কিন্তু
+ * min===max রাখা হয় সবসময় (trailing-zero consistency বজায় রাখতে)।
+ */
+export function formatQty(value: number, decimals = 2): string {
+  return value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+}
+
+// ── Chart helpers (Phase 1 — canvas-ভিত্তিক, কোনো নতুন npm dependency ছাড়াই) ──
+//
+// Chart.js/recharts ইত্যাদি যোগ করলে নতুন npm dependency লাগত, যা
+// এই ecosystem-এর "মোবাইল থেকে GitHub commit → Vercel build, লোকাল
+// npm install নেই" ওয়ার্কফ্লোর সাথে ঘর্ষণ তৈরি করত (নতুন প্যাকেজ
+// commit করার পর প্রথম build না হওয়া পর্যন্ত ভাঙা থাকার ঝুঁকি)।
+// তাই এখানে plain browser <canvas> 2D API দিয়ে bar/pie চার্ট আঁকা
+// হচ্ছে, তারপর canvas.toDataURL() থেকে doc.addImage() — এই দুটো
+// ফাংশন client-side-only (document/canvas লাগে), তাই শুধু PDF
+// generate করার সময় (browser-এ, download button click-এ) কল করা
+// উচিত, কখনো SSR/server context থেকে না।
+
+export interface ChartDatum {
+  label: string
+  value: number
+  color?: [number, number, number]
+}
+
+/**
+ * একটা simple vertical bar chart canvas-এ আঁকে ও PNG data-URL
+ * রিটার্ন করে। PDF_CHART_PALETTE থেকে ধারাবাহিকভাবে রঙ বরাদ্দ হয়
+ * যদি datum.color না দেওয়া থাকে। widthPx/heightPx হাই-DPI রেন্ডার
+ * এর জন্য pdf-এর mm-size-এর চেয়ে বড় রাখা উচিত (২-৩x), তারপর
+ * addChartImage()-এ ছোট mm-size-এ বসানো হয় — এতে PDF-এ চার্ট ঝাপসা
+ * দেখায় না।
+ */
+export function renderBarChartImage(
+  data: ChartDatum[],
+  options?: { widthPx?: number; heightPx?: number; valueFormatter?: (v: number) => string }
+): string {
+  const widthPx = options?.widthPx ?? 900
+  const heightPx = options?.heightPx ?? 500
+  const canvas = document.createElement('canvas')
+  canvas.width = widthPx
+  canvas.height = heightPx
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, widthPx, heightPx)
+
+  const padding = { top: 30, right: 30, bottom: 70, left: 70 }
+  const chartW = widthPx - padding.left - padding.right
+  const chartH = heightPx - padding.top - padding.bottom
+  const maxVal = Math.max(...data.map((d) => d.value), 1)
+
+  // gridlines + y-axis labels
+  ctx.strokeStyle = '#e5e7eb'
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '20px Helvetica, Arial, sans-serif'
+  ctx.textAlign = 'right'
+  const gridSteps = 4
+  for (let i = 0; i <= gridSteps; i++) {
+    const gy = padding.top + chartH - (chartH * i) / gridSteps
+    ctx.beginPath()
+    ctx.moveTo(padding.left, gy)
+    ctx.lineTo(padding.left + chartW, gy)
+    ctx.stroke()
+    const val = (maxVal * i) / gridSteps
+    const label = options?.valueFormatter ? options.valueFormatter(val) : Math.round(val).toLocaleString('en-US')
+    ctx.fillText(label, padding.left - 10, gy + 6)
+  }
+
+  // bars
+  const barGap = chartW / data.length
+  const barWidth = barGap * 0.55
+  data.forEach((d, i) => {
+    const barH = (d.value / maxVal) * chartH
+    const x = padding.left + i * barGap + (barGap - barWidth) / 2
+    const y = padding.top + chartH - barH
+    const [r, g, b] = d.color ?? PDF_CHART_PALETTE[i % PDF_CHART_PALETTE.length]
+    ctx.fillStyle = `rgb(${r},${g},${b})`
+    ctx.fillRect(x, y, barWidth, barH)
+
+    // value label on top of bar
+    ctx.fillStyle = '#1f2937'
+    ctx.textAlign = 'center'
+    ctx.font = 'bold 18px Helvetica, Arial, sans-serif'
+    const valLabel = options?.valueFormatter ? options.valueFormatter(d.value) : d.value.toLocaleString('en-US')
+    ctx.fillText(valLabel, x + barWidth / 2, y - 8)
+
+    // x-axis label (wrapped if long)
+    ctx.fillStyle = '#374151'
+    ctx.font = '18px Helvetica, Arial, sans-serif'
+    ctx.textAlign = 'center'
+    const label = d.label.length > 14 ? d.label.slice(0, 13) + '…' : d.label
+    ctx.fillText(label, x + barWidth / 2, padding.top + chartH + 26)
+  })
+
+  // axis lines
+  ctx.strokeStyle = '#9ca3af'
+  ctx.beginPath()
+  ctx.moveTo(padding.left, padding.top)
+  ctx.lineTo(padding.left, padding.top + chartH)
+  ctx.lineTo(padding.left + chartW, padding.top + chartH)
+  ctx.stroke()
+
+  return canvas.toDataURL('image/png')
+}
+
+/**
+ * একটা pie/donut chart canvas-এ আঁকে (donut, কারণ কেন্দ্রে total
+ * value দেখানো যায় — cost split-এর মতো জায়গায় দরকারি) এবং পাশে
+ * একটা legend সহ PNG data-URL রিটার্ন করে।
+ */
+export function renderPieChartImage(
+  data: ChartDatum[],
+  options?: { widthPx?: number; heightPx?: number; valueFormatter?: (v: number) => string; centerLabel?: string }
+): string {
+  const widthPx = options?.widthPx ?? 900
+  const heightPx = options?.heightPx ?? 500
+  const canvas = document.createElement('canvas')
+  canvas.width = widthPx
+  canvas.height = heightPx
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, widthPx, heightPx)
+
+  const total = data.reduce((sum, d) => sum + d.value, 0) || 1
+  const cx = heightPx / 2
+  const cy = heightPx / 2
+  const outerR = heightPx * 0.38
+  const innerR = outerR * 0.55
+
+  let startAngle = -Math.PI / 2
+  const slices = data.map((d, i) => {
+    const angle = (d.value / total) * Math.PI * 2
+    const color = d.color ?? PDF_CHART_PALETTE[i % PDF_CHART_PALETTE.length]
+    const slice = { ...d, startAngle, endAngle: startAngle + angle, color }
+    startAngle += angle
+    return slice
+  })
+
+  slices.forEach((s) => {
+    const [r, g, b] = s.color
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.arc(cx, cy, outerR, s.startAngle, s.endAngle)
+    ctx.closePath()
+    ctx.fillStyle = `rgb(${r},${g},${b})`
+    ctx.fill()
+  })
+
+  // donut hole
+  ctx.beginPath()
+  ctx.arc(cx, cy, innerR, 0, Math.PI * 2)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+
+  if (options?.centerLabel) {
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 24px Helvetica, Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(options.centerLabel, cx, cy + 8)
+  }
+
+  // legend (ডান পাশে)
+  const legendX = heightPx + 20
+  let legendY = cy - (data.length * 34) / 2 + 10
+  ctx.textAlign = 'left'
+  slices.forEach((s) => {
+    const [r, g, b] = s.color
+    ctx.fillStyle = `rgb(${r},${g},${b})`
+    ctx.fillRect(legendX, legendY - 14, 18, 18)
+
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 18px Helvetica, Arial, sans-serif'
+    ctx.fillText(s.label, legendX + 26, legendY)
+
+    const pct = ((s.value / total) * 100).toFixed(1)
+    const valLabel = options?.valueFormatter ? options.valueFormatter(s.value) : s.value.toLocaleString('en-US')
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '16px Helvetica, Arial, sans-serif'
+    ctx.fillText(`${valLabel} (${pct}%)`, legendX + 26, legendY + 20)
+
+    legendY += 46
+  })
+
+  return canvas.toDataURL('image/png')
+}
+
+/**
+ * renderBarChartImage/renderPieChartImage থেকে পাওয়া PNG data-URL
+ * PDF-এ বসায়, page-width-এর সাথে সঙ্গতিপূর্ণ mm-size বজায় রেখে
+ * (aspect ratio widthPx/heightPx থেকে ধরে রাখা হয়)। রিটার্ন করে
+ * পরের কন্টেন্টের Y-position।
+ */
+export function addChartImage(
+  doc: jsPDF,
+  dataUrl: string,
+  y: number,
+  options?: { widthMm?: number; aspectRatio?: number }
+): number {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const widthMm = options?.widthMm ?? pageWidth - 28
+  const aspect = options?.aspectRatio ?? 900 / 500
+  const heightMm = widthMm / aspect
+
+  doc.addImage(dataUrl, 'PNG', 14, y, widthMm, heightMm, undefined, 'FAST')
+  return y + heightMm + 8
 }
 
 export function downloadPdf(doc: jsPDF, filename: string): void {
   doc.save(filename)
+}
+
+/**
+ * সব report-এর filename একই নিয়মে বানানোর জন্য কেন্দ্রীয় helper।
+ *
+ * ── Phase 6 (Polish) ────────────────────────────────────────────
+ * আগে প্রতিটা downloadXxxReportPdf() নিজে নিজে filename বানাত —
+ * দুটো সমস্যা ছিল: (১) কোনো তারিখ/সময় ছিল না, তাই একই প্রজেক্টে
+ * দ্বিতীয়বার একই রিপোর্ট ডাউনলোড করলে browser নিজে থেকে ফাইলনামের
+ * শেষে "(1)" যোগ করত, কোনটা latest বোঝা কঠিন হতো; (২) projectName
+ * বাংলায় হলে (এই ecosystem-এ খুবই সাধারণ) সেই ইউনিকোড অক্ষর
+ * filename-এ অপরিবর্তিত থেকে যেত, শুধু whitespace sanitize হতো।
+ * এই helper দুটোই ঠিক করে: প্রজেক্ট-নাম থেকে non-ASCII/স্পেশাল
+ * ক্যারেক্টার সরিয়ে safe slug বানায় (বাংলা নাম হলে খালি slug হতে
+ * পারে, সেক্ষেত্রে "Project" fallback), এবং শেষে YYYYMMDD-HHmm
+ * টাইমস্ট্যাম্প জোড়ে।
+ */
+export function buildReportFilename(reportKind: string, projectName: string, generatedAt: number): string {
+  const asciiSlug = projectName
+    .replace(/[^\x20-\x7E]/g, '') // non-ASCII (বাংলা সহ) বাদ, filename-safe রাখতে
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+  const projectSlug = asciiSlug.length > 0 ? asciiSlug : 'Project'
+
+  const d = new Date(generatedAt)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+
+  return `${reportKind}_${projectSlug}_${timestamp}.pdf`
 }
