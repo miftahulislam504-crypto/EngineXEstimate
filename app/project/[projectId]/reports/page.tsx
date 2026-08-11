@@ -17,12 +17,18 @@
 import { useParams } from 'next/navigation'
 import { Loader2, UploadCloud } from 'lucide-react'
 import { useProjectEstimatingData } from '@/lib/hooks/useProjectEstimatingData'
+import { useProjectStore } from '@/store/useProjectStore'
 import { ReportsPanel } from '@/components/reports/ReportsPanel'
 import { useLang } from '@/components/providers/LanguageProvider'
 
 export default function ReportsPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { imported, importedConnected } = useProjectEstimatingData(projectId)
+  // clientName/location Hub import payload-এ নেই (হাব শুধু
+  // building/BNBC তথ্য পাঠায়) — এই দুটো Project রেকর্ডের নিজস্ব
+  // ফিল্ড, layout.tsx-এ ইতিমধ্যে fetchActiveProject() দিয়ে লোড করা
+  // থাকে, তাই এখানে আলাদা fetch না করে একই store থেকে পড়া হচ্ছে।
+  const { activeProject } = useProjectStore()
   const { t } = useLang()
 
   if (!importedConnected) {
@@ -43,5 +49,13 @@ export default function ReportsPage() {
     )
   }
 
-  return <ReportsPanel projectId={projectId} projectName={imported.projectName} projectCode={imported.projectCode} />
+  return (
+    <ReportsPanel
+      projectId={projectId}
+      projectName={imported.projectName}
+      projectCode={imported.projectCode}
+      clientName={activeProject?.clientName || undefined}
+      location={activeProject?.location || undefined}
+    />
+  )
 }

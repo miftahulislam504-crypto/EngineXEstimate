@@ -15,7 +15,7 @@ import { listResourceRates } from '@/lib/firestore/resource-rate.firestore'
 import { getBBS } from '@/lib/firestore/reinforcement.firestore'
 import { getTender, getLatestEngineerEstimate, getTenderFinalizationHistory } from '@/lib/firestore/tender.firestore'
 
-import { BOQItem, BOQVersion } from '@/lib/types/boq.types'
+import { BOQItem, BOQVersion, BOQUnit } from '@/lib/types/boq.types'
 import {
   StoredQuantityTakeoff,
   effectiveArchitecturalQuantities,
@@ -25,6 +25,7 @@ import { Material } from '@/lib/types/material.types'
 import { ResourceRate } from '@/lib/types/resource-rate.types'
 import { BBSRow } from '@/lib/types/reinforcement.types'
 import { EngineerEstimate, ContractorBid, TenderFinalization } from '@/lib/types/tender.types'
+import { RateAnalysisCostBreakdown } from '@/lib/types/rate-analysis.types'
 
 import { calculateProjectCostSummary, ProjectCostSummary } from '@/lib/services/dashboard.service'
 import { calculateRateFromLoadedRates } from '@/lib/services/rate-analysis.service'
@@ -148,6 +149,104 @@ export async function buildTenderReportContext(projectId: string): Promise<Tende
   return { engineerEstimate, bids, comparativeStatement, finalization }
 }
 
+// ── Detailed Calculation Sheet (Rate Analysis itemwise breakdown) ──
+
+export interface CalculationSheetLineItem {
+  name: string
+  unit: string
+  quantityPerUnit: number
+  rate: number // live currentRate, calculateRateFromLoadedRates()-এর সাথে সামঞ্জস্যপূর্ণ
+  lineCost: number // rate × quantityPerUnit
+}
+
+export interface CalculationSheetItem {
+  boqItemId: string
+  boqItemName: string
+  unit: BOQUnit
+  quantity: number // BOQ-তে এই item-এর মোট quantity
+  materials: CalculationSheetLineItem[]
+  labour: CalculationSheetLineItem[]
+  equipment: CalculationSheetLineItem[]
+  overheadPercent: number
+  profitPercent: number
+  breakdown: RateAnalysisCostBreakdown
+  itemTotal: number // finalRate × quantity — পুরো item-এর জন্য মোট খরচ
+  warnings: string[]
+}
+
+export interface CalculationSheetReportContext {
+  items: CalculationSheetItem[]
+  itemsWithoutRateAnalysis: string[] // BOQ-তে আছে কিন্তু কোনো Rate Analysis entry নেই
+}
+
+/**
+ * প্রতিটা BOQ item-কে তার RateAnalysisEntry-র সাথে জোড়া লাগিয়ে,
+ * প্রতিটা material/labour/equipment লাইনের live rate resolve করে
+ * (Material/ResourceRate list থেকে name+unit+currentRate), এবং
+ * calculateRateFromLoadedRates() দিয়ে ঠিক সেই একই breakdown হিসাব
+ * করে যা RateAnalysisPanel UI ও Cost Report ব্যবহার করে — যাতে এই
+ * sheet-এর সংখ্যা প্রজেক্টের বাকি সব জায়গার সাথে মিলে যায়।
+ */
+export async function buildCalculationSheetReportContext(projectId: string): Promise<CalculationSheetReportContext> {
+  const [boqVersion, rateAnalysis, materials, labourRates, equipmentRates] = await Promise.all([
+    getActiveBOQVersion(projectId),
+    getRateAnalysis(projectId),
+    listMaterials(),
+    listResourceRates('labour'),
+    listResourceRates('equipment'),
+  ])
+
+  const boqItems = boqVersion?.items ?? []
+  const entries = rateAnalysis?.entries ?? []
+
+  const items: CalculationSheetItem[] = []
+  const itemsWithoutRateAnalysis: string[] = []
+
+  for (const boqItem of boqItems) {
+    const entry = entries.find((e) => e.boqItemId === boqItem.id)
+    if (!entry) {
+      itemsWithoutRateAnalysis.push(boqItem.itemName)
+      continue
+    }
+
+    const { breakdown, warnings } = calculateRateFromLoadedRates(entry, materials, labourRates, equipmentRates)
+
+    const resolveLine = (
+      consumption: { materialId?: string; resourceRateId?: string; materialName?: string; resourceName?: string; quantityPerUnit: number },
+      pool: { id: string; name: string; unit: string; currentRate: number }[]
+    ): CalculationSheetLineItem => {
+      const refId = consumption.materialId ?? consumption.resourceRateId ?? ''
+      const found = pool.find((p) => p.id === refId)
+      const name = consumption.materialName ?? consumption.resourceName ?? found?.name ?? 'Unknown'
+      const rate = found?.currentRate ?? 0
+      return {
+        name,
+        unit: found?.unit ?? '',
+        quantityPerUnit: consumption.quantityPerUnit,
+        rate,
+        lineCost: rate * consumption.quantityPerUnit,
+      }
+    }
+
+    items.push({
+      boqItemId: boqItem.id,
+      boqItemName: boqItem.itemName,
+      unit: boqItem.unit,
+      quantity: boqItem.quantity,
+      materials: entry.materials.map((m) => resolveLine(m, materials)),
+      labour: entry.labour.map((l) => resolveLine(l, labourRates)),
+      equipment: entry.equipment.map((e) => resolveLine(e, equipmentRates)),
+      overheadPercent: entry.overheadPercent,
+      profitPercent: entry.profitPercent,
+      breakdown,
+      itemTotal: breakdown.finalRate * boqItem.quantity,
+      warnings,
+    })
+  }
+
+  return { items, itemsWithoutRateAnalysis }
+}
+
 // ── Availability check (রিপোর্ট বাটন disable করার জন্য) ────────────
 
 export interface ReportsAvailability {
@@ -157,6 +256,7 @@ export interface ReportsAvailability {
   material: boolean
   bbs: boolean
   tender: boolean
+  calculationSheet: boolean
 }
 
 /**
@@ -182,6 +282,7 @@ export async function checkReportsAvailability(projectId: string): Promise<Repor
     material: materials.filter((m) => m.isActive).length > 0,
     bbs: !!bbs && bbs.rows.length > 0,
     tender: !!tender && (tender.engineerEstimates.length > 0 || tender.contractorBids.length > 0),
+    calculationSheet: !!boqVersion && boqVersion.items.length > 0 && !!rateAnalysis && rateAnalysis.entries.length > 0,
   }
 }
 

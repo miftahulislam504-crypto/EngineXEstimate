@@ -28,6 +28,7 @@ import {
   MaterialReportContext,
   BBSReportContext,
   TenderReportContext,
+  CalculationSheetReportContext,
   ReportsAvailability,
 } from '@/lib/services/reports.service'
 import { calculateBBSRows } from '@/lib/services/reinforcement.service'
@@ -37,6 +38,7 @@ import { drawCostReportBody } from '@/lib/pdf/cost-report.pdf'
 import { drawMaterialReportBody } from '@/lib/pdf/material-report.pdf'
 import { drawBBSReportBody } from '@/lib/pdf/bbs-report.pdf'
 import { drawTenderReportBody } from '@/lib/pdf/tender-report.pdf'
+import { drawCalculationSheetBody } from '@/lib/pdf/calculation-sheet.pdf'
 import {
   drawPdfHeader,
   drawPdfFooter,
@@ -55,6 +57,7 @@ export interface MasterReportContext {
   material: MaterialReportContext
   bbs: BBSReportContext
   tender: TenderReportContext
+  calculationSheet: CalculationSheetReportContext
 }
 
 interface SectionDef {
@@ -72,6 +75,7 @@ const SECTION_DEFS: SectionDef[] = [
   { key: 'material', label: 'Material Report' },
   { key: 'bbs', label: 'Bar Bending Schedule (BBS)' },
   { key: 'tender', label: 'Tender Report' },
+  { key: 'calculationSheet', label: 'Detailed Calculation Sheet' },
 ]
 
 export function generateMasterReportPdf(context: MasterReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
@@ -140,6 +144,9 @@ export function generateMasterReportPdf(context: MasterReportContext, meta: Omit
         break
       case 'tender':
         drawTenderReportBody(doc, context.tender, y, { ...reportMeta, reportTitle: section.label })
+        break
+      case 'calculationSheet':
+        drawCalculationSheetBody(doc, context.calculationSheet, y, { ...reportMeta, reportTitle: section.label })
         break
     }
   })

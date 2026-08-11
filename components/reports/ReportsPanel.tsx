@@ -29,6 +29,7 @@ import {
   buildMaterialReportContext,
   buildBBSReportContext,
   buildTenderReportContext,
+  buildCalculationSheetReportContext,
 } from '@/lib/services/reports.service'
 import { downloadBOQReportPdf } from '@/lib/pdf/boq-report.pdf'
 import { downloadQuantityReportPdf } from '@/lib/pdf/quantity-report.pdf'
@@ -36,6 +37,7 @@ import { downloadCostReportPdf } from '@/lib/pdf/cost-report.pdf'
 import { downloadMaterialReportPdf } from '@/lib/pdf/material-report.pdf'
 import { downloadBBSReportPdf } from '@/lib/pdf/bbs-report.pdf'
 import { downloadTenderReportPdf } from '@/lib/pdf/tender-report.pdf'
+import { downloadCalculationSheetPdf } from '@/lib/pdf/calculation-sheet.pdf'
 import { downloadMasterReportPdf } from '@/lib/pdf/master-report.pdf'
 import { ReportKind } from '@/lib/types/reports.types'
 import type { TranslationKey } from '@/lib/i18n'
@@ -44,6 +46,12 @@ interface ReportsPanelProps {
   projectId: string
   projectName: string
   projectCode?: string
+  // MICON-স্টাইল drawing title-block-এর ধারণা থেকে cover page-এ যোগ
+  // হওয়া দুটো ঐচ্ছিক ফিল্ড — Project রেকর্ড থেকে (Hub import payload-এ
+  // এগুলো নেই)। না থাকলে cover page-এ শুধু সেই row বাদ পড়ে, কোনো
+  // ভাঙা লেআউট হয় না।
+  clientName?: string
+  location?: string
 }
 
 const REPORT_LABEL_KEYS: Record<ReportKind, TranslationKey> = {
@@ -53,6 +61,7 @@ const REPORT_LABEL_KEYS: Record<ReportKind, TranslationKey> = {
   material: 'materialReportLabel',
   bbs: 'bbsReportLabel',
   tender: 'tenderReportLabel',
+  calculationSheet: 'calculationSheetReportLabel',
   master: 'masterReportLabel',
 }
 
@@ -63,12 +72,13 @@ const REPORT_UNAVAILABLE_KEYS: Record<ReportKind, TranslationKey> = {
   material: 'reportUnavailableMaterial',
   bbs: 'reportUnavailableBbs',
   tender: 'reportUnavailableTender',
+  calculationSheet: 'reportUnavailableCalculationSheet',
   master: 'reportUnavailableMaster',
 }
 
-const REPORT_KINDS: Exclude<ReportKind, 'master'>[] = ['boq', 'quantity', 'cost', 'material', 'bbs', 'tender']
+const REPORT_KINDS: Exclude<ReportKind, 'master'>[] = ['boq', 'quantity', 'cost', 'material', 'bbs', 'tender', 'calculationSheet']
 
-export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPanelProps) {
+export function ReportsPanel({ projectId, projectName, projectCode, clientName, location }: ReportsPanelProps) {
   const { t } = useLang()
   const [availability, setAvailability] = useState<ReportsAvailability | null>(null)
   const [loading, setLoading] = useState(true)
@@ -93,7 +103,7 @@ export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPan
     setGenerating(kind)
     setError(null)
     try {
-      const meta = { projectName, projectCode, generatedAt: Date.now() }
+      const meta = { projectName, projectCode, clientName, location, generatedAt: Date.now() }
       switch (kind) {
         case 'boq': {
           const context = await buildBOQReportContext(projectId)
@@ -125,22 +135,31 @@ export function ReportsPanel({ projectId, projectName, projectCode }: ReportsPan
           downloadTenderReportPdf(context, meta)
           break
         }
+        case 'calculationSheet': {
+          const context = await buildCalculationSheetReportContext(projectId)
+          downloadCalculationSheetPdf(context, meta)
+          break
+        }
         case 'master': {
           // প্রতিটা section-এর context আলাদাভাবে fetch — একটা section
           // fetch fail করলেও (যেমন কোনো project-এ tender ডেটা নেই)
           // Promise.all reject হয়ে পুরো Master Report আটকে যাবে না,
           // কারণ প্রতিটা build*ReportContext() নিজেই "নেই" অবস্থা
           // handle করে খালি/ডিফল্ট context রিটার্ন করে (throw করে না)।
-          const [boq, quantity, cost, material, bbs, tender] = await Promise.all([
+          const [boq, quantity, cost, material, bbs, tender, calculationSheet] = await Promise.all([
             buildBOQReportContext(projectId),
             buildQuantityReportContext(projectId),
             buildCostReportContext(projectId),
             buildMaterialReportContext(),
             buildBBSReportContext(projectId),
             buildTenderReportContext(projectId),
+            buildCalculationSheetReportContext(projectId),
           ])
           const currentAvailability = availability ?? (await checkReportsAvailability(projectId))
-          downloadMasterReportPdf({ availability: currentAvailability, boq, quantity, cost, material, bbs, tender }, meta)
+          downloadMasterReportPdf(
+            { availability: currentAvailability, boq, quantity, cost, material, bbs, tender, calculationSheet },
+            meta
+          )
           break
         }
       }

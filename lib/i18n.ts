@@ -512,8 +512,9 @@ export const translations = {
     materialReportLabel: 'Material Report PDF',
     bbsReportLabel: 'BBS Report PDF',
     tenderReportLabel: 'Tender Report PDF',
+    calculationSheetReportLabel: 'Detailed Calculation Sheet PDF',
     masterReportLabel: 'Full Project Report PDF',
-    masterReportDescription: 'সব section (BOQ, Quantity, Cost, Material, BBS, Tender) এক PDF-এ — cover page, table of contents ও section-wise page break সহ। যে section-এ ডেটা নেই, সেটা বাদ পড়ে।',
+    masterReportDescription: 'সব section (BOQ, Quantity, Cost, Material, BBS, Tender, Calculation Sheet) এক PDF-এ — cover page, table of contents ও section-wise page break সহ। যে section-এ ডেটা নেই, সেটা বাদ পড়ে।',
     downloadBtn: 'ডাউনলোড করুন',
     generatingReport: 'তৈরি হচ্ছে...',
     reportUnavailableBoq: 'কোনো BOQ পাওয়া যায়নি — আগে Module 3-এ BOQ generate করুন।',
@@ -522,6 +523,7 @@ export const translations = {
     reportUnavailableMaterial: 'কোনো সক্রিয় material পাওয়া যায়নি — Material Database-এ কিছু যোগ করুন।',
     reportUnavailableBbs: 'কোনো BBS row পাওয়া যায়নি — আগে Module 7-এ row যোগ করুন।',
     reportUnavailableTender: 'কোনো Tender ডেটা পাওয়া যায়নি — Engineer Estimate বা Contractor Bid যোগ করুন।',
+    reportUnavailableCalculationSheet: 'Calculation Sheet বানানোর মতো ডেটা নেই — BOQ ও Rate Analysis দুটোই লাগবে।',
     reportUnavailableMaster: 'কোনো module-এই এখনো ডেটা নেই — অন্তত একটা section (BOQ, Quantity ইত্যাদি) সম্পূর্ণ করুন।',
     reportGenerationFailed: 'PDF তৈরি করতে সমস্যা হয়েছে, আবার চেষ্টা করুন।',
 
@@ -1035,9 +1037,10 @@ export const translations = {
     materialReportLabel: 'Material Report PDF',
     bbsReportLabel: 'BBS Report PDF',
     tenderReportLabel: 'Tender Report PDF',
+    calculationSheetReportLabel: 'Detailed Calculation Sheet PDF',
     masterReportLabel: 'Full Project Report PDF',
     masterReportDescription:
-      'All sections (BOQ, Quantity, Cost, Material, BBS, Tender) in one PDF — with a cover page, table of contents, and section-wise page breaks. Sections with no data are skipped.',
+      'All sections (BOQ, Quantity, Cost, Material, BBS, Tender, Calculation Sheet) in one PDF — with a cover page, table of contents, and section-wise page breaks. Sections with no data are skipped.',
     downloadBtn: 'Download',
     generatingReport: 'Generating...',
     reportUnavailableBoq: 'No BOQ found — generate a BOQ in Module 3 first.',
@@ -1046,6 +1049,7 @@ export const translations = {
     reportUnavailableMaterial: 'No active materials found — add some in the Material Database.',
     reportUnavailableBbs: 'No BBS rows found — add rows in Module 7 first.',
     reportUnavailableTender: 'No tender data found — add an Engineer Estimate or Contractor Bid.',
+    reportUnavailableCalculationSheet: 'Not enough data for a Calculation Sheet — both BOQ and Rate Analysis are required.',
     reportUnavailableMaster: 'No data in any module yet — complete at least one section (BOQ, Quantity, etc.) first.',
     reportGenerationFailed: 'Something went wrong generating the PDF — please try again.',
 

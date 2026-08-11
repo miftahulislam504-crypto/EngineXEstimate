@@ -75,6 +75,14 @@ export interface PdfReportMeta {
   projectName: string
   projectCode?: string
   generatedAt: number
+  // ── Cover page title-block (ঐচ্ছিক) ──────────────────────────────
+  // Project.clientName/location থেকে আসে (project.types.ts)। আগে
+  // কোনো report meta-তে এই দুটো ছিল না, শুধু projectName/projectCode
+  // Hub import থেকে পাস হতো। ঐচ্ছিক রাখা হয়েছে যাতে পুরনো caller
+  // (যারা এখনো শুধু projectName/projectCode/generatedAt পাস করে)
+  // ভেঙে না যায় — না থাকলে cover page-এর title-block row-টা বাদ পড়ে।
+  clientName?: string
+  location?: string
 }
 
 /**
@@ -186,11 +194,14 @@ export function drawPdfFooter(doc: jsPDF, options?: { startPage?: number }): voi
 }
 
 /**
- * একটা পূর্ণ cover/title page — বড় logo, report title, project
- * name/code, generated-at, ও (থাকলে) একটা subtitle লাইন (যেমন
- * "6 of 6 sections included")। এর পরে caller নতুন doc.addPage()
- * করে বডি কন্টেন্ট শুরু করবে বলে ধরে নেওয়া হয়েছে — তাই এই ফাংশন
- * pageCount বা Y-position রিটার্ন করে না।
+ * একটা পূর্ণ cover/title page — top brand band-এ logo+app name,
+ * বড় report title/subtitle, এবং নিচে একটা title-block info grid
+ * (Project / Client / Location / Generated — MICON-স্টাইল drawing
+ * title-block-এর ধারণা থেকে অনুপ্রাণিত, কিন্তু রঙিন বর্ডার-ফ্রেম
+ * ছাড়া — এই ecosystem-এর ব্র্যান্ড কালারে ক্লিন/প্রফেশনাল লুক)।
+ * এর পরে caller নতুন doc.addPage() করে বডি কন্টেন্ট শুরু করবে বলে
+ * ধরে নেওয়া হয়েছে — তাই এই ফাংশন pageCount বা Y-position রিটার্ন
+ * করে না।
  *
  * ব্যবহার ঐচ্ছিক: ছোট/simple রিপোর্টে (single-table) শুধু
  * drawPdfHeader ব্যবহার চালিয়ে যাওয়া যায়; cover page মূলত multi-
@@ -205,71 +216,110 @@ export function drawCoverPage(
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const cx = pageWidth / 2
+  const margin = 20
 
-  // উপরের brand color band
+  // ── উপরের brand band — ভরাট ব্লক না, একটা পাতলা top bar (drawing
+  // sheet-এর মতো ভারী রঙিন ফ্রেমের বদলে হালকা, ক্লিন উপস্থিতি) ──
   doc.setFillColor(...PDF_BRAND_COLOR)
-  doc.rect(0, 0, pageWidth, 4, 'F')
+  doc.rect(0, 0, pageWidth, 3, 'F')
 
-  // কেন্দ্রে বড় logo mark
-  const logoSize = 26
-  drawLogoMark(doc, cx - logoSize / 2, 55, logoSize)
-
-  doc.setFontSize(11)
-  doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.setFont('helvetica', 'normal')
-  doc.text('EngineX Quanta', cx, 95, { align: 'center' })
-
-  doc.setFontSize(24)
+  // ── লোগো + app name, উপরে বাম ঘেঁষে (কেন্দ্রীভূত না রেখে একটা
+  // document masthead-এর মতো অনুভূতি) ──
+  const logoSize = 12
+  drawLogoMark(doc, margin, 20, logoSize)
+  doc.setFontSize(13)
   doc.setTextColor(20, 20, 20)
   doc.setFont('helvetica', 'bold')
-  doc.text(meta.reportTitle, cx, 112, { align: 'center' })
+  doc.text('EngineX Quanta', margin + logoSize + 5, 26)
   doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.text('Construction Estimating & Cost Management', margin + logoSize + 5, 31.5)
+
+  doc.setDrawColor(225, 225, 225)
+  doc.setLineWidth(0.3)
+  doc.line(margin, 42, pageWidth - margin, 42)
+
+  // ── মূল শিরোনাম ব্লক ──
+  doc.setFontSize(26)
+  doc.setTextColor(20, 20, 20)
+  doc.setFont('helvetica', 'bold')
+  doc.text(meta.reportTitle, cx, 78, { align: 'center', maxWidth: pageWidth - margin * 2 })
+  doc.setFont('helvetica', 'normal')
+
+  doc.setDrawColor(...PDF_BRAND_COLOR)
+  doc.setLineWidth(0.8)
+  doc.line(cx - 16, 86, cx + 16, 86)
 
   if (options?.subtitle) {
     doc.setFontSize(11)
     doc.setTextColor(...PDF_MUTED_COLOR)
-    doc.text(options.subtitle, cx, 121, { align: 'center' })
+    doc.text(options.subtitle, cx, 96, { align: 'center' })
   }
 
-  // প্রজেক্ট তথ্যের বক্স
-  const boxY = 140
-  doc.setDrawColor(225, 225, 225)
-  doc.setLineWidth(0.3)
-  doc.roundedRect(cx - 60, boxY, 120, 34, 3, 3, 'S')
+  // ── Title-block — MICON-স্টাইল drawing-এর "Job Title/Consultant/
+  // Client" তথ্য-ব্লকের ধারণা, কিন্তু রঙিন বর্ডার-ফ্রেম ছাড়া: একটা
+  // হালকা-বর্ডার rounded box-এ label-uppercase + value দুই-কলাম গ্রিড।
+  // clientName/location না থাকলে (Hub import-ভিত্তিক পুরনো caller)
+  // সেই row বাদ পড়ে — খালি "—" দেখানো হয় না।
+  const rows: { label: string; value: string }[] = [
+    { label: 'PROJECT', value: meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName },
+  ]
+  if (meta.clientName) rows.push({ label: 'CLIENT', value: meta.clientName })
+  if (meta.location) rows.push({ label: 'LOCATION', value: meta.location })
+  rows.push({ label: 'GENERATED', value: new Date(meta.generatedAt).toLocaleString('en-US') })
 
-  doc.setFontSize(9)
-  doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.text('PROJECT', cx, boxY + 10, { align: 'center' })
-  doc.setFontSize(13)
-  doc.setTextColor(20, 20, 20)
-  doc.setFont('helvetica', 'bold')
-  const projectLine = meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName
-  doc.text(projectLine, cx, boxY + 18, { align: 'center' })
-  doc.setFont('helvetica', 'normal')
+  const blockWidth = pageWidth - margin * 2 - 20
+  const blockX = cx - blockWidth / 2
+  const rowHeight = 13
+  const blockY = 112
+  const blockHeight = rows.length * rowHeight
 
-  doc.setFontSize(9)
-  doc.setTextColor(...PDF_MUTED_COLOR)
-  const generatedLabel = `Generated on ${new Date(meta.generatedAt).toLocaleString('en-US')}`
-  doc.text(generatedLabel, cx, boxY + 27, { align: 'center' })
+  doc.setDrawColor(220, 220, 224)
+  doc.setLineWidth(0.4)
+  doc.roundedRect(blockX, blockY, blockWidth, blockHeight, 2, 2, 'S')
+
+  // বাম পাশে brand-color accent bar — পুরো title-block জুড়ে
+  doc.setFillColor(...PDF_BRAND_COLOR)
+  doc.roundedRect(blockX, blockY, 2, blockHeight, 1, 1, 'F')
+
+  rows.forEach((row, i) => {
+    const rowY = blockY + i * rowHeight
+    if (i > 0) {
+      doc.setDrawColor(235, 235, 238)
+      doc.setLineWidth(0.2)
+      doc.line(blockX + 6, rowY, blockX + blockWidth, rowY)
+    }
+    doc.setFontSize(7.5)
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    doc.setFont('helvetica', 'bold')
+    doc.text(row.label, blockX + 10, rowY + 8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10.5)
+    doc.setTextColor(20, 20, 20)
+    doc.text(row.value, blockX + 50, rowY + 8.5, { maxWidth: blockWidth - 58 })
+  })
 
   // Watermark (diagonal, হালকা) — চাইলে DRAFT/FINAL স্ট্যাম্প
   if (options?.watermark) {
     doc.setFontSize(60)
-    doc.setTextColor(230, 230, 230)
+    doc.setTextColor(235, 235, 238)
     doc.setFont('helvetica', 'bold')
-    doc.text(options.watermark, cx, pageHeight / 2 + 20, {
+    doc.text(options.watermark, cx, pageHeight / 2 + 60, {
       align: 'center',
       angle: 35,
     })
     doc.setFont('helvetica', 'normal')
   }
 
-  // নিচে brand color band + tagline
-  doc.setFillColor(...PDF_BRAND_COLOR)
-  doc.rect(0, pageHeight - 4, pageWidth, 4, 'F')
+  // ── নিচে পাতলা brand line + tagline (উপরের masthead-এর সাথে
+  // সামঞ্জস্যপূর্ণ, ভারী রঙিন ব্যান্ড না) ──
+  doc.setDrawColor(...PDF_BRAND_COLOR)
+  doc.setLineWidth(0.6)
+  doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18)
   doc.setFontSize(8)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.text('Construction estimating, quantity takeoff & cost management', cx, pageHeight - 12, { align: 'center' })
+  doc.text('Auto-generated report — EngineX Quanta', cx, pageHeight - 12, { align: 'center' })
 }
 
 /**
@@ -284,38 +334,67 @@ export function drawTableOfContents(
   doc: jsPDF,
   entries: { label: string; pageNumber: number }[]
 ): void {
-  doc.setFontSize(16)
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 20
+
+  doc.setFontSize(18)
   doc.setTextColor(20, 20, 20)
   doc.setFont('helvetica', 'bold')
-  doc.text('Contents', 14, 20)
+  doc.text('Contents', margin, 24)
   doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.text('Sections included in this report', margin, 30)
 
   doc.setDrawColor(...PDF_BRAND_COLOR)
-  doc.setLineWidth(0.6)
-  doc.line(14, 24, 60, 24)
+  doc.setLineWidth(0.8)
+  doc.line(margin, 35, margin + 22, 35)
 
-  let y = 38
-  const pageWidth = doc.internal.pageSize.getWidth()
+  let y = 50
+  const rowHeight = 12
+  const chipSize = 6.5
+
   entries.forEach((entry, i) => {
-    doc.setFontSize(11)
-    doc.setTextColor(40, 40, 40)
-    doc.text(`${i + 1}.  ${entry.label}`, 18, y)
+    // হালকা alternate row shading — MICON-স্টাইল SL.No টেবিলের ধারণা,
+    // কিন্তু বর্ডার-গ্রিড ছাড়া, শুধু ব্যাকগ্রাউন্ড ব্যান্ড
+    if (i % 2 === 1) {
+      doc.setFillColor(248, 249, 248)
+      doc.rect(margin - 4, y - 8, pageWidth - (margin - 4) * 2, rowHeight, 'F')
+    }
+
+    // নম্বর chip — brand-color আউটলাইনড বৃত্ত, SL.No-এর মতো
+    doc.setDrawColor(...PDF_BRAND_COLOR)
+    doc.setLineWidth(0.4)
+    doc.circle(margin + chipSize / 2, y - 2.2, chipSize / 2, 'S')
+    doc.setFontSize(7.5)
+    doc.setTextColor(...PDF_BRAND_COLOR)
+    doc.setFont('helvetica', 'bold')
+    doc.text(String(i + 1), margin + chipSize / 2, y - 0.3, { align: 'center' })
+
+    // লেবেল
+    doc.setFontSize(10.5)
+    doc.setTextColor(30, 30, 30)
+    doc.setFont('helvetica', 'normal')
+    const labelX = margin + chipSize + 6
+    doc.text(entry.label, labelX, y)
 
     // dotted leader line
-    const labelWidth = doc.getTextWidth(`${i + 1}.  ${entry.label}`)
-    const dotsStartX = 18 + labelWidth + 3
-    const dotsEndX = pageWidth - 24
-    doc.setTextColor(...PDF_MUTED_COLOR)
+    const labelWidth = doc.getTextWidth(entry.label)
+    const dotsStartX = labelX + labelWidth + 3
+    const dotsEndX = pageWidth - margin - 10
     if (dotsEndX > dotsStartX) {
-      doc.setLineDashPattern([0.6, 1.2], 0)
-      doc.setDrawColor(180, 180, 180)
+      doc.setLineDashPattern([0.6, 1.4], 0)
+      doc.setDrawColor(200, 200, 203)
       doc.line(dotsStartX, y - 1, dotsEndX, y - 1)
       doc.setLineDashPattern([], 0)
     }
 
-    doc.setTextColor(40, 40, 40)
-    doc.text(String(entry.pageNumber), pageWidth - 14, y, { align: 'right' })
-    y += 9
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    doc.text(String(entry.pageNumber), pageWidth - margin, y, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+
+    y += rowHeight
   })
 }
 
