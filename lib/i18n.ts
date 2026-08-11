@@ -87,6 +87,11 @@ export const translations = {
     projectNotFound: 'প্রজেক্ট পাওয়া যায়নি',
     noHubImportYetTitle: 'এখনো Hub থেকে ডেটা আসেনি',
     noHubImportYetBody: 'এই প্রজেক্টের building ও BNBC তথ্য এখনো Hub থেকে import হয়নি — Integration ট্যাবে গিয়ে import করুন।',
+    hubExportSyncPushing: 'Hub-এ পাঠানো হচ্ছে...',
+    hubExportSyncPending: 'পরিবর্তন সংরক্ষিত আছে, Hub-এ পাঠানো বাকি...',
+    hubExportSyncPushed: 'Hub-এর সাথে সিঙ্ক করা হয়েছে',
+    hubExportSyncError: 'Hub-এ পাঠাতে সমস্যা হয়েছে',
+    hubExportSyncIdle: 'Hub-এর সাথে সিঙ্ক করা আছে',
 
     // ── Project Selector পেজ ──────────────────────────────────
     yourProjects: 'আপনার প্রজেক্ট',
@@ -187,6 +192,7 @@ export const translations = {
     hubAutoFetchArchNotFound: 'Hub-এ এখনো কোনো Architectural ডেটা পাওয়া যায়নি।',
     hubAutoFetchStructNotFound: 'Hub-এ এখনো কোনো Structural ডেটা পাওয়া যায়নি — Structural app এখনো Hub-এ কিছু পাঠাচ্ছে না।',
     hubAutoFetchVersionLabel: 'ভার্সন',
+    hubAutoSyncedLabel: 'স্বয়ংক্রিয়ভাবে সিঙ্ক করা হয়েছে',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',
@@ -616,6 +622,11 @@ export const translations = {
     projectNotFound: 'Project not found',
     noHubImportYetTitle: 'No data from Hub yet',
     noHubImportYetBody: "This project's building and BNBC data hasn't been imported from Hub yet — go to the Integration tab to import it.",
+    hubExportSyncPushing: 'Pushing to Hub...',
+    hubExportSyncPending: 'Changes saved, pending push to Hub...',
+    hubExportSyncPushed: 'Synced with Hub',
+    hubExportSyncError: 'Failed to push to Hub',
+    hubExportSyncIdle: 'In sync with Hub',
 
     // ── Project Selector page ─────────────────────────────────
     yourProjects: 'Your Projects',
@@ -716,6 +727,7 @@ export const translations = {
     hubAutoFetchArchNotFound: 'No Architectural data found in Hub yet.',
     hubAutoFetchStructNotFound: "No Structural data found in Hub yet — the Structural app isn't publishing to Hub yet.",
     hubAutoFetchVersionLabel: 'version',
+    hubAutoSyncedLabel: 'Auto-synced',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',
