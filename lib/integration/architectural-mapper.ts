@@ -1,50 +1,46 @@
 // lib/integration/architectural-mapper.ts
 //
 // ইনপুট: ArchitecturalModuleData (lib/types/module-data.types.ts — Hub-এর
-// 2026-08-05 zip থেকে verbatim কপি করা, MODULE_DATA_SYNC_NOTES.md
-// দ্রষ্টব্য)। এই ইন্টারফেসের প্রতিটা schedule/quantity field আজ
-// `unknown` টাইপে — কারণ Hub-এর নিজস্ব নোট অনুযায়ী "কোন app-এর ভেতরের
-// actual data shape এখনো জানা নেই... যখন সেই app-এর কোড দেখা হবে, এই
-// unknown গুলো আসল interface দিয়ে replace করা উচিত।"
+// zip থেকে verbatim কপি করা)।
 //
-// অর্থাৎ এই mapper **আজ কোনো real data দিয়ে test করা সম্ভব না** —
-// EngineXDraw আজ পর্যন্ত `hub.saveModuleData()` কল করে না (Hub-এর
-// নিজের নোট + আমাদের নিজস্ব যাচাই দুটোই একমত: EngineXDraw এখনো পুরনো
-// moduleMetadata/Storage pattern-এই আছে)। তাই নিচের row-shape
-// (RoomScheduleRow ইত্যাদি) একটা **সুনির্দিষ্ট অনুমান**, EngineXDraw-এর
-// প্রকৃত schedule export কোডের ওপর ভিত্তি করে না — Architectural app-এর
-// পক্ষ থেকে সত্যিকারের saveModuleData() কল আসার পর, এই ফাইলের
-// normalize* ফাংশনগুলোই একমাত্র জায়গা যা বদলাতে হবে (নিচের bare-minimum
-// pipeline অপরিবর্তিত থাকবে)।
+// EngineXDraw এখন hub.saveOwnModuleData() দিয়ে সত্যিকারের schedule ডেটা
+// পাঠায় (apps/web/src/lib/hub/hub-schedule-export.ts, buildScheduleExport())
+// — নিচের RoomScheduleRow/WallScheduleRow/FloorAreaRow shape সেই ফাইলের
+// field-নাম ও একক (মিটার) থেকে সরাসরি verify করে বসানো, আর কোনো অনুমান
+// না। Draw-এর ভবিষ্যৎ কোনো পরিবর্তনে এই field-নাম বদলালে (rename/একক
+// পরিবর্তন), শুধু এই ফাইলের normalize* ফাংশন ও নিচের row-shape আপডেট
+// করলেই হবে — bare-minimum pipeline অপরিবর্তিত থাকবে।
 //
-// ধরে নেওয়া shape (নির্মাণ-চর্চার সাধারণ schedule টেবিল অনুযায়ী):
-//   roomSchedule?:   { id, floorId, name, areaSqft }[]
-//   wallSchedule?:   { id, floorId, lengthFt, heightFt }[]
-//   doorSchedule?:   { id, floorId }[]   (শুধু count দরকার, তাই শুধু floorId)
-//   windowSchedule?: { id, floorId }[]
-//   floorAreas?:     { floorId, floorLabel }[]  (floor list, area না — শুধু কোন floor আছে জানার জন্য)
-//
-// ─── একক ───────────────────────────────────────────────────────────
-// ধরে নেওয়া হয়েছে upstream থেকে এমনিতেই ফুট/বর্গফুটে আসবে (Hub-এর
-// module-data.types.ts এককের ব্যাপারে কিছু বলে না, কিন্তু
-// quantity-takeoff.types.ts-এর ArchitecturalFloorQuantities-ও ft-ভিত্তিক
-// — দুটো app-ই বাংলাদেশ নির্মাণ চর্চা অনুসরণ করে বলে একই একক ধরে
-// নেওয়া স্বাভাবিক)। যদি প্রকৃত producer মিটারে পাঠায়, এই ফাইলে
-// SQM_TO_SQFT/M_TO_FT গুণক যোগ করতে হবে normalize ফাংশনে।
+// door/windowSchedule-এ শুধু floorId/id লাগে (শুধু count দরকার) — Draw
+// এই দুটোকে wallId/tag/width/height/sillHeight সহ পাঠায়, কিন্তু এই
+// mapper সেই বাড়তি field ব্যবহার করে না, তাই OpeningScheduleRow-তে
+// শুধু ব্যবহৃত অংশটুকু রাখা হয়েছে।
 
 import type { ArchitecturalModuleData } from '@/lib/types/module-data.types'
 import type { ArchitecturalFloorQuantities } from '@/lib/types/quantity-takeoff.types'
 
+// ─── প্রকৃত producer shape (EngineXDraw এর apps/web/src/lib/hub/
+// hub-schedule-export.ts, buildScheduleExport() — field-নাম ও একক এই
+// সংযুক্ত জিপ থেকে সরাসরি verify করা, অনুমান না) ───────────────────
+//
+// Draw মিটারে পাঠায় (areaSqm/lengthM/height — height ইতিমধ্যেই মিটার,
+// আলাদা "heightM" নাম নেই), এই ফাইলের ব্যবহারকারী-মুখী আউটপুট
+// (ArchitecturalFloorQuantities) ft-ভিত্তিক (Bangladesh construction
+// practice অনুযায়ী quantity-takeoff.types.ts জুড়েই) — তাই normalize
+// ফাংশনেই conversion হয়, ব্যবহারকারীর কাছে raw মিটার পৌঁছায় না।
+const SQM_TO_SQFT = 10.7639
+const M_TO_FT = 3.28084
+
 interface RoomScheduleRow {
   id?: string
   floorId?: string
-  areaSqft?: number
+  areaSqm?: number
 }
 interface WallScheduleRow {
   id?: string
   floorId?: string
-  lengthFt?: number
-  heightFt?: number
+  lengthM?: number
+  height?: number
 }
 interface OpeningScheduleRow {
   id?: string
@@ -52,7 +48,7 @@ interface OpeningScheduleRow {
 }
 interface FloorAreaRow {
   floorId?: string
-  floorLabel?: string
+  floorName?: string
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {
@@ -74,9 +70,7 @@ export interface ArchitecturalMapResult {
  * ArchitecturalModuleData.data-কে floor-ভিত্তিক
  * ArchitecturalFloorQuantities[]-এ রূপান্তর করে। কোনো schedule field
  * অনুপস্থিত/খালি থাকলে সেই অংশ শূন্য ধরে হিসাব চালিয়ে যায় (crash না
- * করে), কিন্তু warning যোগ করে — যেহেতু producer এখনো নেই, প্রায়
- * নিশ্চিতভাবেই সব field আজ খালি থাকবে, এবং সেটাই এই ফাংশনের প্রত্যাশিত,
- * স্বাভাবিক আজকের ফলাফল।
+ * করে), কিন্তু warning যোগ করে।
  */
 export function mapArchitecturalModuleDataToFloors(data: ArchitecturalModuleData): ArchitecturalMapResult {
   const warnings: string[] = []
@@ -99,16 +93,19 @@ export function mapArchitecturalModuleDataToFloors(data: ArchitecturalModuleData
         warnings.push('floorAreas-এর একটা এন্ট্রিতে floorId নেই — সেই floor বাদ দেওয়া হয়েছে।')
         return null
       }
-      const floorLabel = asStr(f.floorLabel) ?? floorId
+      const floorLabel = asStr(f.floorName) ?? floorId
 
       const roomsHere = roomRows.filter((r) => r.floorId === floorId)
       const wallsHere = wallRows.filter((w) => w.floorId === floorId)
       const doorsHere = doorRows.filter((d) => d.floorId === floorId)
       const windowsHere = windowRows.filter((w) => w.floorId === floorId)
 
-      const floorAreaSqft = roomsHere.reduce((sum, r) => sum + (asNum(r.areaSqft) ?? 0), 0)
-      const wallLengthFt = wallsHere.reduce((sum, w) => sum + (asNum(w.lengthFt) ?? 0), 0)
-      const wallAreaSqft = wallsHere.reduce((sum, w) => sum + (asNum(w.lengthFt) ?? 0) * (asNum(w.heightFt) ?? 0), 0)
+      const floorAreaSqft = roomsHere.reduce((sum, r) => sum + (asNum(r.areaSqm) ?? 0) * SQM_TO_SQFT, 0)
+      const wallLengthFt = wallsHere.reduce((sum, w) => sum + (asNum(w.lengthM) ?? 0) * M_TO_FT, 0)
+      const wallAreaSqft = wallsHere.reduce(
+        (sum, w) => sum + (asNum(w.lengthM) ?? 0) * (asNum(w.height) ?? 0) * SQM_TO_SQFT,
+        0,
+      )
 
       if (roomsHere.length === 0) warnings.push(`Floor "${floorLabel}"-এ roomSchedule entry পাওয়া যায়নি — floorAreaSqft শূন্য।`)
       if (wallsHere.length === 0) warnings.push(`Floor "${floorLabel}"-এ wallSchedule entry পাওয়া যায়নি — wallLengthFt/wallAreaSqft শূন্য।`)

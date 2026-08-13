@@ -6,14 +6,20 @@
 // প্রবাহ নেই — ব্যবহারকারীর স্পষ্ট নির্দেশ)।
 //
 // Hub-এর EstimatingModuleData (lib/types/module-data.types.ts)-এ ১৯টা
-// ফিল্ড আছে। এই ফাইল তার মধ্যে ১৭টা পূরণ করে existing module data
-// থেকে (নতুন কোনো data-entry UI ছাড়া) — বাকি ২টা (activityWiseCost,
-// paymentStatus) ইচ্ছাকৃতভাবে undefined থাকে, কারণ:
-//   - activityWiseCost: Estimate app-এ কোনো "activity/task" concept
-//     নেই (এটা schedule/WBS-ভিত্তিক ধারণা), ভবিষ্যতের জন্য ফেলে রাখা
-//     হয়েছে (ব্যবহারকারীর সিদ্ধান্ত)।
-//   - paymentStatus: ইনভয়েস/পেমেন্ট ট্র্যাকিং সম্পূর্ণ নতুন module,
-//     আজকের স্কোপের বাইরে (ব্যবহারকারীর সিদ্ধান্ত)।
+// ফিল্ড আছে। এই ফাইল তার মধ্যে ১৮টা পূরণ করে existing module data
+// থেকে (নতুন কোনো data-entry UI ছাড়া) — বাকি ১টা (paymentStatus)
+// ইচ্ছাকৃতভাবে undefined থাকে, কারণ ইনভয়েস/পেমেন্ট ট্র্যাকিং
+// সম্পূর্ণ নতুন module, আজকের স্কোপের বাইরে (ব্যবহারকারীর সিদ্ধান্ত)।
+//
+// activityWiseCost (Phase 9, ecosystem sync plan): PM app-এর
+// moduleData/projectmgmt থেকে WBS নোড পড়ে (getModuleData, one-shot —
+// এই ফাইলের বাকি সব fetch-এর মতোই, prepareHubExport() নিজেও one-shot),
+// BOQ item-কে নামের সাথে মিলিয়ে WBS নোডে assign করে, rate-analysis
+// দিয়ে cost বের করে group করে (wbs-cost-mapper.ts)। এটা একটা
+// best-effort name-matching heuristic — নিশ্চিত mapping না, সেই ফাইলের
+// header comment-এ কারণ ব্যাখ্যা করা আছে। PM-এর WBS এখনো খালি বা BOQ
+// item নামের সাথে না মিললে activityWiseCost খালি/আংশিক থাকবে —
+// warnings-এ কারণ জানানো হয়, silently ভুল সংখ্যা দেখানো হয় না।
 //
 // ⚠️ finalBoq ও approvedQuantities দুটোই getActiveBOQVersion()-এর
 // একই ডেটা থেকে আসে (Estimate app-এ আলাদা "approved" ফ্ল্যাগ নেই,
@@ -41,7 +47,8 @@ import {
   calculateReinforcementProcurementNeeds,
 } from '@/lib/services/procurement.service'
 import { calculateCashFlow } from '@/lib/services/cashflow.service'
-import { bumpOwnModuleVersion, saveOwnModuleData } from '@/lib/integration/hub-sdk-client'
+import { bumpOwnModuleVersion, saveOwnModuleData, getModuleData } from '@/lib/integration/hub-sdk-client'
+import { buildActivityWiseCost, type WbsNodeRow } from '@/lib/integration/wbs-cost-mapper'
 import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import type { EstimatingModuleData } from '@/lib/types/module-data.types'
@@ -71,7 +78,7 @@ export async function prepareHubExport(projectId: string): Promise<HubModuleExpo
   const emptyFields: (keyof EstimatingModuleData)[] = []
   const warnings: string[] = []
 
-  const [boqVersion, storedRateAnalysis, materials, labourRates, equipmentRates, storedBBS, storedBudget, budgetApprovals, storedVendorData, storedProcurementSchedule] =
+  const [boqVersion, storedRateAnalysis, materials, labourRates, equipmentRates, storedBBS, storedBudget, budgetApprovals, storedVendorData, storedProcurementSchedule, pmModuleRecord] =
     await Promise.all([
       getActiveBOQVersion(projectId),
       getRateAnalysis(projectId),
@@ -83,6 +90,7 @@ export async function prepareHubExport(projectId: string): Promise<HubModuleExpo
       getBudgetApprovalHistory(projectId),
       getVendorData(projectId),
       getProcurementSchedule(projectId),
+      getModuleData(projectId, 'projectmgmt'),
     ])
 
   const boqItems = boqVersion?.items ?? []
@@ -98,6 +106,15 @@ export async function prepareHubExport(projectId: string): Promise<HubModuleExpo
   if (!storedVendorData || (storedVendorData.quotations.length === 0 && purchases.length === 0)) emptyFields.push('vendorInformation')
   if (!storedProcurementSchedule || storedProcurementSchedule.entries.length === 0) emptyFields.push('procurementList', 'procurementPlan')
   if (purchases.length === 0) emptyFields.push('cashFlow')
+
+  // activityWiseCost (Phase 9) — ফাইল-শীর্ষ নোট ও wbs-cost-mapper.ts
+  // দ্রষ্টব্য। pmModuleRecord.data.wbsNodes-এর shape PM app-এর
+  // usePmOutboundSync.ts-এর সাথে হুবহু মিলিয়ে বসানো (id/name/nodeType/
+  // parentId/path)।
+  const wbsNodes = ((pmModuleRecord?.data as Record<string, unknown> | undefined)?.wbsNodes ?? []) as WbsNodeRow[]
+  const activityWiseCostResult = buildActivityWiseCost(boqItems, rateAnalysisEntries, materials, labourRates, equipmentRates, wbsNodes)
+  warnings.push(...activityWiseCostResult.warnings)
+  if (activityWiseCostResult.entries.length === 0) emptyFields.push('activityWiseCost')
 
   const materialRequirement = calculateMaterialProcurementNeeds(boqItems, rateAnalysisEntries, materials)
   const labourRequirement = calculateLabourProcurementNeeds(boqItems, rateAnalysisEntries, labourRates)
@@ -130,7 +147,7 @@ export async function prepareHubExport(projectId: string): Promise<HubModuleExpo
 
   const data: EstimatingModuleData = {
     boq: boqVersion ?? undefined,
-    activityWiseCost: undefined, // ইচ্ছাকৃতভাবে খালি — ফাইল-শীর্ষ নোট দ্রষ্টব্য
+    activityWiseCost: activityWiseCostResult.entries.length > 0 ? activityWiseCostResult.entries : undefined,
     materialRequirement: fullMaterialRequirement,
     labourRequirement,
     equipmentRequirement,

@@ -19,6 +19,7 @@ export interface HubExportPayload {
   siteInfo?: SiteInfoExport
   bnbcSettings?: BNBCExport
   buildingInfo?: BuildingExport
+  projectSettings?: ProjectSettingsExport
 }
 
 export interface SiteInfoExport {
@@ -73,14 +74,37 @@ export interface BuildingExport {
   hasParkingFloor: boolean
 }
 
+// Ported from Hub's lib/types/project-settings.types.ts (ProjectSettings)
+// — trimmed to the fields that file's own comment identifies as
+// Estimating's: "currency, taxVat, contingencyOverhead". designCode/
+// unitSystem (shared with Structural/Architectural) and Structural's
+// concreteGrade/reinforcementGrade/structuralSteelGrade are NOT
+// included — Estimating has no current use for them (same "only carry
+// what you read" reasoning the BuildingExport/BNBCExport subset above
+// already follows).
+export interface ProjectSettingsExport {
+  currency: string
+  vatPercent: number
+  taxPercent: number
+  contingencyPercent: number
+  overheadPercent: number
+  profitPercent: number
+}
+
 // ─── Estimating app-এর নিজস্ব দরকারি সাবসেট ─────────────────────────
 // buildExportPayload() থেকে siteInfo বাদ দিয়ে শুধু আমাদের অংশ বের করার
 // জন্য এই হেল্পার টাইপ। এটা ব্যবহার করলে বাকি কোডে সবখানে "as
 // BuildingExport | undefined" চেক লিখতে হবে না।
+//
+// projectSettings ইচ্ছাকৃতভাবে Required-এর বাইরে (শুধু Pick, buildingInfo/
+// bnbcSettings-এর মতো নয়) — Hub-এর project_settings/data document
+// migration-এর আগে তৈরি হওয়া পুরনো export JSON-এ এই field থাকবে না,
+// আর সেই পুরনো JSON import করাও বৈধ থাকা উচিত (শুধু Currency/VAT/
+// Contingency ফাঁকা থাকবে, বাকি সব আগের মতোই কাজ করবে)।
 export type EstimatingRelevantPayload = Required<
   Pick<HubExportPayload, 'buildingInfo' | 'bnbcSettings'>
 > &
-  Pick<HubExportPayload, 'version' | 'exportedAt' | 'projectId' | 'projectCode' | 'projectName'>
+  Pick<HubExportPayload, 'version' | 'exportedAt' | 'projectId' | 'projectCode' | 'projectName' | 'projectSettings'>
 
 // ─── Import validation ফলাফল ─────────────────────────────────────────
 export interface HubImportResult {

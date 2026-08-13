@@ -44,6 +44,21 @@ const REQUIRED_BNBC_FIELDS: (keyof NonNullable<HubExportPayload['bnbcSettings']>
   'seismicCs',
 ]
 
+// projectSettings (Currency/VAT/Tax/Contingency) — NOT in the required
+// list above. Older Hub exports (before project_settings/data existed)
+// won't carry this field, and that must still import successfully —
+// only a warning, never a blocking error, matching the same
+// backward-compatibility reasoning EstimatingRelevantPayload's own
+// comment gives for keeping projectSettings out of Required<>.
+const REQUIRED_PROJECT_SETTINGS_FIELDS: (keyof NonNullable<HubExportPayload['projectSettings']>)[] = [
+  'currency',
+  'vatPercent',
+  'taxPercent',
+  'contingencyPercent',
+  'overheadPercent',
+  'profitPercent',
+]
+
 /**
  * Raw JSON string (ফাইল আপলোড বা paste থেকে) পার্স করে
  * EstimatingRelevantPayload-এ রূপান্তর করে, অথবা কেন ব্যর্থ হলো তার
@@ -120,6 +135,27 @@ export function parseHubExport(rawJson: string): HubImportResult {
     errors.push(
       `bnbcSettings-এ এই ফিল্ডগুলো অনুপস্থিত: ${missingBnbcFields.join(', ')} — Hub-এ BNBC Settings ফর্মটা সম্পূর্ণ পূরণ হয়নি।`
     )
+  }
+
+  // projectSettings — soft-optional (see REQUIRED_PROJECT_SETTINGS_FIELDS
+  // comment above). Missing entirely -> one warning, not an error.
+  // Present but partially filled -> also a warning, since Currency/VAT/
+  // Contingency existing-but-incomplete more likely means Hub's
+  // Project Settings form was only half filled in, worth flagging.
+  if (!payload.projectSettings) {
+    warnings.push(
+      'projectSettings (Currency/VAT/Tax/Contingency) এই export-এ নেই — Hub-এর Project Settings ফর্ম এখনো পূরণ হয়নি অথবা পুরনো Hub ভার্সনের export। BOQ-তে এই মুহূর্তে ম্যানুয়াল ডিফল্ট (BDT, 15% VAT) ব্যবহার হবে।'
+    )
+  } else {
+    const projectSettings = payload.projectSettings as unknown as Record<string, unknown>
+    const missingProjectSettingsFields = REQUIRED_PROJECT_SETTINGS_FIELDS.filter(
+      (field) => projectSettings[field] === undefined || projectSettings[field] === null
+    )
+    if (missingProjectSettingsFields.length > 0) {
+      warnings.push(
+        `projectSettings-এ এই ফিল্ডগুলো অনুপস্থিত: ${missingProjectSettingsFields.join(', ')} — Hub-এ Project Settings ফর্মটা সম্পূর্ণ পূরণ হয়নি।`
+      )
+    }
   }
 
   if (errors.length > 0) {
