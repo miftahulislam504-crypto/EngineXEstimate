@@ -1,11 +1,18 @@
 // lib/services/quantity-takeoff.service.ts
 //
-// hub-import.service.ts-এর একই validation philosophy অনুসরণ করে —
-// required field check, sanity warning (error না) অস্বাভাবিক মানের
-// জন্য। কোড ডুপ্লিকেট না করে সরাসরি আলাদা রাখা হয়েছে কারণ
+// একই validation philosophy অনুসরণ করে যা hub-native-sync.ts/
+// hub-import.firestore.ts এর buildingInfo/bnbcSettings sync-এ ব্যবহৃত
+// হয় — required field check, sanity warning (error না) অস্বাভাবিক
+// মানের জন্য। কোড ডুপ্লিকেট না করে সরাসরি আলাদা রাখা হয়েছে কারণ
 // QuantityTakeoffExport-এর শেপ HubExportPayload থেকে যথেষ্ট আলাদা
 // (floor-ভিত্তিক array বনাম flat object) — এই মুহূর্তে abstraction
-// বানানো premature হবে দুটো import-type দিয়ে।
+// বানানো premature হবে দুটো import-type দিয়ে। এই ফাইল এখনো ম্যানুয়াল
+// JSON import (QuantityImportPanel.tsx) সার্ভ করে, কারণ Structural
+// quantity-এর producer-side (EngineX-Structural থেকে
+// hub.saveModuleData('structural', ...)) এখনো তৈরি হয়নি —
+// buildingInfo/bnbcSettings-এর মতো automatic হওয়ার আগে সেই producer-
+// side লাগবে (connection-registry.ts-এর
+// structural-to-estimating-quantity এন্ট্রি দ্রষ্টব্য)।
 
 import {
   QuantityTakeoffExport,

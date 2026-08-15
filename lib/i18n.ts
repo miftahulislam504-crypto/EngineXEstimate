@@ -86,7 +86,7 @@ export const translations = {
     switchProject: 'প্রজেক্ট বদলান',
     projectNotFound: 'প্রজেক্ট পাওয়া যায়নি',
     noHubImportYetTitle: 'এখনো Hub থেকে ডেটা আসেনি',
-    noHubImportYetBody: 'এই প্রজেক্টের building ও BNBC তথ্য এখনো Hub থেকে import হয়নি — Integration ট্যাবে গিয়ে import করুন।',
+    noHubImportYetBody: 'এই প্রজেক্টের building ও BNBC তথ্য এখনো Hub থেকে sync হয়নি — CivilOS Hub-এ Building Information ও BNBC Settings ফর্ম পূরণ করলে এখানে স্বয়ংক্রিয়ভাবে চলে আসবে।',
     hubExportSyncPushing: 'Hub-এ পাঠানো হচ্ছে...',
     hubExportSyncPending: 'পরিবর্তন সংরক্ষিত আছে, Hub-এ পাঠানো বাকি...',
     hubExportSyncPushed: 'Hub-এর সাথে সিঙ্ক করা হয়েছে',
@@ -168,7 +168,13 @@ export const translations = {
     floors: 'তলা',
     liveLoad: 'Live Load',
 
-    // ── HubImportPanel + QuantityImportPanel (shared import-panel pattern) ──
+    // ── HubImportPanel (মুছে ফেলা হয়েছে) + QuantityImportPanel ──────
+    // hubImportTitle/hubImportFirstTimeHint/hubImportReimportHint/
+    // hubImportSaved/hubImportDescription এখন dead — HubImportPanel.tsx
+    // মুছে ফেলার পর এদের কোনো caller নেই (নতুন key: hubNativeSync*,
+    // নিচে "HubImportPanel + QuantityImportPanel" এর বাইরে দেখুন)।
+    // chooseFile/orDragHere/jsonFileOnly এখনো QuantityImportPanel
+    // ব্যবহার করে — মুছে ফেলা যাবে না।
     hubImportTitle: 'Hub থেকে প্রজেক্ট ডেটা আনুন',
     hubImportFirstTimeHint: 'এই প্রজেক্টে এখনো কোনো Hub import হয়নি — নিচে থেকে প্রথম import করুন।',
     hubImportReimportHint: 'Hub-এ ডেটা বদলেছে? নিচে থেকে আবার import করলে নতুন version হিসেবে সংরক্ষণ হবে।',
@@ -193,6 +199,20 @@ export const translations = {
     hubAutoFetchStructNotFound: 'Hub-এ এখনো কোনো Structural ডেটা পাওয়া যায়নি — Structural app এখনো Hub-এ কিছু পাঠাচ্ছে না।',
     hubAutoFetchVersionLabel: 'ভার্সন',
     hubAutoSyncedLabel: 'স্বয়ংক্রিয়ভাবে সিঙ্ক করা হয়েছে',
+
+    // ── integration/page.tsx — Hub Building/BNBC auto-sync status ──────
+    // আগে এখানে ম্যানুয়াল JSON paste/upload প্যানেল ছিল
+    // (hubImportTitle/hubImportFirstTimeHint/hubImportReimportHint/
+    // hubImportSaved/hubImportDescription — সেই key গুলো এখন dead,
+    // কোনো caller নেই, কিন্তু নাম-সংঘাত এড়াতে মুছে ফেলা হয়নি)। এই নতুন
+    // key গুলো hub-native-sync.ts এর automatic mechanism-এর status
+    // দেখানোর জন্য।
+    hubNativeSyncTitle: 'Hub থেকে প্রজেক্ট ডেটা (স্বয়ংক্রিয়)',
+    hubNativeSyncDescription:
+      'CivilOS Hub-এ Building Information ও BNBC Settings ফর্ম পূরণ/সংশোধন করলেই এখানে স্বয়ংক্রিয়ভাবে sync হয়ে যাবে — কোনো ম্যানুয়াল export/import প্রয়োজন নেই।',
+    hubNativeSyncWaiting: 'Hub-এ এখনো Building Information ও BNBC Settings ফর্ম সম্পূর্ণ পূরণ হয়নি।',
+    hubNativeSyncSyncing: 'Sync হচ্ছে...',
+    hubNativeSyncError: 'Hub থেকে sync করতে সমস্যা হচ্ছে।',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',
@@ -621,7 +641,7 @@ export const translations = {
     switchProject: 'Switch project',
     projectNotFound: 'Project not found',
     noHubImportYetTitle: 'No data from Hub yet',
-    noHubImportYetBody: "This project's building and BNBC data hasn't been imported from Hub yet — go to the Integration tab to import it.",
+    noHubImportYetBody: "This project's building and BNBC data hasn't synced from Hub yet — fill in the Building Information and BNBC Settings forms in CivilOS Hub and it'll appear here automatically.",
     hubExportSyncPushing: 'Pushing to Hub...',
     hubExportSyncPending: 'Changes saved, pending push to Hub...',
     hubExportSyncPushed: 'Synced with Hub',
@@ -703,7 +723,13 @@ export const translations = {
     floors: 'floors',
     liveLoad: 'Live Load',
 
-    // ── HubImportPanel + QuantityImportPanel (shared import-panel pattern) ──
+    // ── HubImportPanel (removed) + QuantityImportPanel ─────────────
+    // hubImportTitle/hubImportFirstTimeHint/hubImportReimportHint/
+    // hubImportSaved/hubImportDescription are now dead — no caller
+    // since HubImportPanel.tsx was removed (new keys: hubNativeSync*,
+    // see below outside this "HubImportPanel + QuantityImportPanel"
+    // block). chooseFile/orDragHere/jsonFileOnly are still used by
+    // QuantityImportPanel — don't remove those.
     hubImportTitle: 'Bring in project data from Hub',
     hubImportFirstTimeHint: "No Hub import yet for this project — do your first import below.",
     hubImportReimportHint: 'Data changed in Hub? Import again below to save it as a new version.',
@@ -728,6 +754,19 @@ export const translations = {
     hubAutoFetchStructNotFound: "No Structural data found in Hub yet — the Structural app isn't publishing to Hub yet.",
     hubAutoFetchVersionLabel: 'version',
     hubAutoSyncedLabel: 'Auto-synced',
+
+    // ── integration/page.tsx — Hub Building/BNBC auto-sync status ──────
+    // hubImportTitle/hubImportFirstTimeHint/hubImportReimportHint/
+    // hubImportSaved/hubImportDescription (above) are now dead — no
+    // caller after the manual JSON panel was removed — but left in
+    // place to avoid a name collision. These new keys cover
+    // hub-native-sync.ts's automatic mechanism status.
+    hubNativeSyncTitle: 'Project data from Hub (automatic)',
+    hubNativeSyncDescription:
+      "Fill in or update the Building Information and BNBC Settings forms in CivilOS Hub and they'll sync here automatically — no manual export/import needed.",
+    hubNativeSyncWaiting: "Hub's Building Information and BNBC Settings forms aren't fully filled in yet.",
+    hubNativeSyncSyncing: 'Syncing…',
+    hubNativeSyncError: 'Having trouble syncing from Hub.',
 
     // ── MaterialDatabase ──────────────────────────────────────
     materialDatabaseTitle: 'Material Database',

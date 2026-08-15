@@ -1,17 +1,25 @@
 // lib/types/hub-import.types.ts
 //
-// এই ফাইলের প্রতিটা interface CivilOS Hub-এর
-// lib/types/integration.types.ts থেকে হুবহু মিলিয়ে রাখা হয়েছে।
+// এই ফাইলের প্রতিটা interface CivilOS Hub-এর প্রকৃত Firestore document
+// shape থেকে হুবহু verified (Hub_com zip-এর lib/types/{site-info,
+// building,bnbc,project-settings}.types.ts) — আগে এটা Hub-এর
+// lib/types/integration.types.ts (একটা manual-export-only helper file,
+// Hub-এর কোনো Firestore write mechanism ছিল না) থেকে মেলানো হয়েছিল,
+// যা এখন dead/replaced (hub-native-sync.ts এর file comment দ্রষ্টব্য)।
 // Hub-এর schema বদলালে এই ফাইলও বদলাতে হবে — দুই জায়গায় শেপ আলাদা
 // হয়ে গেলে import silently ভুল data দেবে, কোনো error ছাড়াই।
 //
-// Estimating app শুধু buildingInfo আর bnbcSettings ব্যবহার করে
-// (TARGET_APPS['estimating'].needs অনুযায়ী)। siteInfo টাইপ সামঞ্জস্যের
-// জন্য রাখা হলো, কিন্তু আমরা এটা read করি না।
+// ⚠️ সংশোধনী নোট: আগে এখানে BNBCExport-এ seismicCs (Cs = Ss×I/R) নামে
+// একটা field ছিল যা Hub-এর real BNBCSettings টাইপে নেই — Hub এই মান
+// পাঠায়ই না (Estimating আগে কখনো এই field ব্যবহারও করেনি, শুধু
+// ভ্যালিডেশনে required হিসেবে ভুলভাবে চেক করা হতো)। এখন hub-native-
+// sync.ts নিজেই এই মান derive করে (deriveSeismicCs()), এই টাইপে ধরে
+// রাখা হয় না — Hub থেকে যা আসে না তা এই "export" টাইপে না রাখাই
+// পরিষ্কার (raw Hub shape ও derived value গুলিয়ে না ফেলা)।
 
 export interface HubExportPayload {
   version: '1.0'
-  exportedAt: string // ISO date
+  exportedAt: string // ISO date — hub-native-sync.ts যখন এই payload assemble করে তখনকার timestamp (Hub কোনো envelope পাঠায় না, প্রতিটা document আলাদা)
   projectId: string
   projectCode: string
   projectName: string
@@ -30,7 +38,6 @@ export interface SiteInfoExport {
   longitude?: number
   plotArea?: number
   plotAreaUnit?: string
-  plotAreaSqm?: number
   roadWidth?: number
   soilType: string
   groundLevel?: number
@@ -52,7 +59,6 @@ export interface BNBCExport {
   spectralAcceleration: number // Ss
   responseModFactor: number // R
   structuralSystem: string
-  seismicCs: number // Cs = Ss×I/R
 }
 
 export interface BuildingExport {
@@ -92,24 +98,17 @@ export interface ProjectSettingsExport {
 }
 
 // ─── Estimating app-এর নিজস্ব দরকারি সাবসেট ─────────────────────────
-// buildExportPayload() থেকে siteInfo বাদ দিয়ে শুধু আমাদের অংশ বের করার
-// জন্য এই হেল্পার টাইপ। এটা ব্যবহার করলে বাকি কোডে সবখানে "as
-// BuildingExport | undefined" চেক লিখতে হবে না।
+// Hub-এর siteInfo বাদ দিয়ে শুধু আমাদের অংশ বের করার জন্য এই হেল্পার
+// টাইপ। এটা ব্যবহার করলে বাকি কোডে সবখানে "as BuildingExport |
+// undefined" চেক লিখতে হবে না।
 //
 // projectSettings ইচ্ছাকৃতভাবে Required-এর বাইরে (শুধু Pick, buildingInfo/
 // bnbcSettings-এর মতো নয়) — Hub-এর project_settings/data document
-// migration-এর আগে তৈরি হওয়া পুরনো export JSON-এ এই field থাকবে না,
-// আর সেই পুরনো JSON import করাও বৈধ থাকা উচিত (শুধু Currency/VAT/
-// Contingency ফাঁকা থাকবে, বাকি সব আগের মতোই কাজ করবে)।
+// এখনো পূরণ না হয়ে থাকতে পারে (ব্যবহারকারী এখনো সেই ফর্ম পূরণ করেননি),
+// আর সেক্ষেত্রেও siteInfo/buildingInfo/bnbcSettings sync হওয়া উচিত
+// (শুধু Currency/VAT/Contingency ফাঁকা থাকবে, বাকি সব আগের মতোই কাজ
+// করবে)।
 export type EstimatingRelevantPayload = Required<
   Pick<HubExportPayload, 'buildingInfo' | 'bnbcSettings'>
 > &
   Pick<HubExportPayload, 'version' | 'exportedAt' | 'projectId' | 'projectCode' | 'projectName' | 'projectSettings'>
-
-// ─── Import validation ফলাফল ─────────────────────────────────────────
-export interface HubImportResult {
-  success: boolean
-  payload?: EstimatingRelevantPayload
-  errors: string[]
-  warnings: string[]
-}

@@ -84,9 +84,12 @@ export interface StructuralFloorQuantities {
 
 /**
  * Hub থেকে পুরো payload — HubExportPayload (lib/types/hub-import.types.ts)-এর
- * সাথে একই প্যাটার্নে ডিজাইন করা, যাতে ভবিষ্যতে Hub আসলে এই export
- * তৈরি করলে existing parseHubExport()-এর মতো একই validation
- * approach পুনর্ব্যবহার করা যায়।
+ * সাথে একই প্যাটার্নে ডিজাইন করা। buildingInfo/bnbcSettings-এর জন্য এই
+ * প্যাটার্ন এখন hub-native-sync.ts-এ automatic mechanism হিসেবে
+ * বাস্তবায়িত (ম্যানুয়াল JSON parse/validate সম্পূর্ণ বাদ) — Structural
+ * quantity-এর জন্যও ভবিষ্যতে (structural-to-estimating-quantity
+ * connection producer-side রেডি হলে) একই automatic subscribe-and-
+ * assemble approach অনুসরণ করা উচিত, ম্যানুয়াল import panel না।
  */
 export interface QuantityTakeoffExport {
   version: '1.0'

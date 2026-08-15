@@ -11,7 +11,7 @@
 'use client'
 
 import { useParams } from 'next/navigation'
-import { Loader2, UploadCloud } from 'lucide-react'
+import { Loader2, Clock } from 'lucide-react'
 import { useProjectEstimatingData } from '@/lib/hooks/useProjectEstimatingData'
 import { ProjectDashboard } from '@/components/dashboard/ProjectDashboard'
 import { useLang } from '@/components/providers/LanguageProvider'
@@ -36,7 +36,7 @@ export default function DashboardPage() {
   if (!imported) {
     return (
       <div className="card py-16 text-center px-6 max-w-md mx-auto">
-        <UploadCloud size={36} className="text-text-muted mx-auto mb-3 opacity-30" />
+        <Clock size={36} className="text-text-muted mx-auto mb-3 opacity-30" />
         <p className="text-text-secondary font-medium text-sm mb-1">{t('noHubImportYetTitle')}</p>
         <p className="text-text-muted text-sm">{t('noHubImportYetBody')}</p>
       </div>

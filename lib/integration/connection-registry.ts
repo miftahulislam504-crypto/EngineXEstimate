@@ -32,17 +32,18 @@ import { ConnectionPoint } from '@/lib/types/integration-hub.types'
 export const CONNECTION_REGISTRY: ConnectionPoint[] = [
   {
     id: 'hub-to-estimating-building-bnbc',
-    label: 'Hub → Estimating: Building Info + BNBC Settings (manual export)',
+    label: 'Hub → Estimating: Building Info + BNBC Settings (automatic)',
     direction: 'upstream',
     counterpartApp: 'CivilOS Hub',
     dataDescription: 'buildingInfo (BuildingExport) ও bnbcSettings (BNBCExport) — Module 2/4/7-এর হিসাবের ভিত্তি',
-    firestorePath: 'projects/{projectId}/estimatingInput/hubImports/{importId} (আমাদের নিজের versioned copy) + activeImport (pointer)',
-    isPathConfirmed: true, // এটা আমাদেরই path — Hub-এর সাথে সমন্বয়ের দরকার নেই, শুধু Hub যেন এখানে লিখতে পারে (বা আমরা manual import করে এখানে সেভ করি)
+    firestorePath:
+      'Hub সরাসরি: projects/{projectId}/building_information/data, projects/{projectId}/bnbc_settings/data, projects/{projectId}/project_settings/data (hub-native-sync.ts) → আমাদের নিজের versioned copy: projects/{projectId}/estimatingInput/hubImports/{importId} + activeImport (pointer)',
+    isPathConfirmed: true, // Hub-এর প্রকৃত কোড থেকে verified (site-info.firestore.ts/building.firestore.ts/bnbc.firestore.ts/project-settings.firestore.ts) — EngineX-Structural ও EngineXProject-এর হুবহু একই verified path
     schemaVersion: '1.0',
-    status: 'manual', // Hub এখনো এই path-এ সরাসরি লেখে না — HubExportPayload (Hub-এর lib/types/integration.types.ts) এখনো শুধু downloadJSON()/copyToClipboard() দিয়ে বের হয়
+    status: 'live', // hub-native-sync.ts সরাসরি Hub-এর document real-time subscribe করে, ম্যানুয়াল import আর নেই
     relatedModules: ['Module 2', 'Module 4', 'Module 7'],
     notes:
-      'Hub-এর zip পরীক্ষা করে verify করা (2026-07-17): lib/services/integration.service.ts-এ generateExportPayload() আছে কিন্তু কোনো Firestore write নেই, শুধু client-side JSON/clipboard। civilos_bridge collection Hub নিজেই deprecated ঘোষণা করেছে।',
+      'সংশোধনী ইতিহাস: আগে এই connection সম্পূর্ণ manual ছিল (Hub-এর lib/services/integration.service.ts-এর generateExportPayload() শুধু client-side JSON/clipboard বানাতো, কোনো Firestore write ছিল না — HubImportPanel.tsx এর মাধ্যমে ব্যবহারকারীকে paste/upload করতে হতো)। এখন hub-native-sync.ts Hub-এর real buildingInfo/bnbcSettings/projectSettings document সরাসরি শোনে ও স্বয়ংক্রিয়ভাবে EstimatingRelevantPayload assemble করে hub-import.firestore.ts-এর versioned audit-trail mechanism-এ পাঠায় — ব্যবহারকারীর কোনো action ছাড়াই। civilos_bridge collection Hub নিজেই deprecated ঘোষণা করেছে (firestore.rules-এর কমেন্ট, Phase 1-এ) — এখানে সেই রেফারেন্স নেই।',
   },
   {
     id: 'hub-sdk-version-dependency-estimating',
@@ -95,10 +96,10 @@ export const CONNECTION_REGISTRY: ConnectionPoint[] = [
     firestorePath: 'projects/{projectId}/moduleData/architectural (Hub-এর module-data-sync pattern, 2026-08-05 zip-এ যোগ হয়েছে)',
     isPathConfirmed: true, // path ও shape (ArchitecturalModuleData) দুটোই Hub-এর zip থেকে verified
     schemaVersion: '1.0',
-    status: 'listening', // architectural-mapper.ts + hub-module-import.ts এই path শুনতে প্রস্তুত। EngineXDraw আজ পর্যন্ত এখানে লেখে না — সেই App এখনো পুরনো moduleMetadata/Storage pattern (heavy geometry file, BuildingElementRef[]) ব্যবহার করে, এই নতুন structured-field moduleData pattern-এ migrate হয়নি (যাচাই করা হয়েছে, 2026-08-06)
+    status: 'live', // architectural-mapper.ts + hub-module-import.ts এই path শোনে, EngineXDraw এখন সরাসরি এখানে লেখে
     relatedModules: ['Module 2', 'Module 3'],
     notes:
-      'consumer-side সম্পূর্ণ। producer-side বাকি: EngineXDraw-এর কোডে hub.saveModuleData(projectId, \'architectural\', \'architectural\', {roomSchedule, wallSchedule, doorSchedule, windowSchedule, floorAreas, ...}) কল বসাতে হবে (অথবা পুরনো moduleMetadata/BuildingElementRef থেকে এই নতুন shape-এ রূপান্তর করে পাঠাতে হবে)। ততক্ষণ manual JSON import fallback হিসেবে থাকছে।',
+      'সংশোধনী ইতিহাস: এই connection আগে "listening" ছিল কারণ EngineXDraw তখন পুরনো moduleMetadata/Storage-file pattern (heavy geometry, BuildingElementRef[]) ব্যবহার করতো, এই structured-field moduleData pattern-এ লেখেনি। EngineXDraw-এর Firebase free plan-এ Storage bucket তৈরি করা যায় না বলে সেই pattern বাস্তবে কখনো কাজ করতো না — এখন EngineXDraw-এর hub-write.ts (publishArchitecturalToHub()) schedule (roomSchedule/wallSchedule/doorSchedule/windowSchedule/floorAreas) ও পূর্ণ geometry দুটোই এই একই moduleData/architectural document-এ pure Firestore-এ লেখে, auto-synced (floor-level Firestore listener + debounce, useArchitecturalAutoSync.ts) — কোনো ম্যানুয়াল বাটন নেই।',
   },
   {
     id: 'estimating-to-budget-boq',
