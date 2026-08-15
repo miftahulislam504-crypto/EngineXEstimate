@@ -3,8 +3,24 @@
 // যাচাই হওয়া Hub payload প্রজেক্টের নিচে ভার্সন-সহ সংরক্ষণ করার জন্য।
 //
 // পাথ:
-//   projects/{projectId}/estimatingInput/hubImports/{importId}  ← প্রতিটা import স্থায়ীভাবে সংরক্ষিত
-//   projects/{projectId}/estimatingInput/activeImport            ← কোনটা "current" তার pointer
+//   projects/{projectId}/estimatingInput/root/hubImports/{importId}  ← প্রতিটা import স্থায়ীভাবে সংরক্ষিত
+//   projects/{projectId}/estimatingInput/activeImport                 ← কোনটা "current" তার pointer
+//
+// ⚠️ বাগফিক্স: আগে hubImports সরাসরি projects/{projectId}/
+// estimatingInput/hubImports/{importId} এ লেখা হতো — কিন্তু Firestore
+// document path-এ সবসময় জোড় সংখ্যক segment লাগে (collection→doc→
+// collection→doc→...)। সেই path গুনলে ৫টা segment
+// (projects, projectId, estimatingInput, hubImports, importId) — বেজোড়,
+// Firestore SDK নিজেই "Invalid document reference" throw করতো। এটা এই
+// ফাইলের একটা pre-existing bug ছিল যা কখনো আগে trigger হয়নি (ম্যানুয়াল
+// import panel-এ কেউ কখনো সফলভাবে সম্পূর্ণ save করেননি), hub-native-
+// sync.ts-এর automatic sync প্রথমবার এটা চালিয়ে ধরা পড়েছে।
+//
+// ফিক্স: hubImports subcollection-কে estimatingInput collection-এর
+// একটা fixed document ('root') এর নিচে রাখা হয়েছে, ঠিক activeImport
+// pointer-এর মতোই একই collection-এর sibling document — এতে
+// activeImport-এর path (আগে থেকেই বৈধ, ৪ segment) অপরিবর্তিত থাকে,
+// শুধু hubImports-এর অবস্থান ঠিক হলো (এখন ৬ segment, জোড়, বৈধ)।
 //
 // কেন versioned (overwrite-only না): Module 4 (Rate Analysis) ও
 // Module 7 (Reinforcement Estimation) সরাসরি buildingInfo/bnbcSettings-এর
@@ -32,6 +48,7 @@ import { db } from '@/lib/firebase'
 import { EstimatingRelevantPayload } from '@/lib/types/hub-import.types'
 
 const PARENT_COLLECTION = 'estimatingInput'
+const IMPORTS_PARENT_DOC = 'root' // hubImports subcollection এই fixed doc-এর নিচে — bugfix note উপরে দ্রষ্টব্য
 const IMPORTS_SUBCOLLECTION = 'hubImports'
 const ACTIVE_POINTER_DOC = 'activeImport'
 
@@ -73,6 +90,7 @@ export async function saveHubImport(
     'projects',
     projectId,
     PARENT_COLLECTION,
+    IMPORTS_PARENT_DOC,
     IMPORTS_SUBCOLLECTION,
     importId
   )
@@ -115,6 +133,7 @@ export async function getActiveHubImport(projectId: string): Promise<StoredHubIm
     'projects',
     projectId,
     PARENT_COLLECTION,
+    IMPORTS_PARENT_DOC,
     IMPORTS_SUBCOLLECTION,
     importId
   )
@@ -139,6 +158,7 @@ export async function getHubImportHistory(
     'projects',
     projectId,
     PARENT_COLLECTION,
+    IMPORTS_PARENT_DOC,
     IMPORTS_SUBCOLLECTION
   )
   const q = query(importsRef, orderBy('importedAt', 'desc'), limit(maxResults))
@@ -160,6 +180,7 @@ export async function getHubImportById(
     'projects',
     projectId,
     PARENT_COLLECTION,
+    IMPORTS_PARENT_DOC,
     IMPORTS_SUBCOLLECTION,
     importId
   )

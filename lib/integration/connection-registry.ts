@@ -37,7 +37,7 @@ export const CONNECTION_REGISTRY: ConnectionPoint[] = [
     counterpartApp: 'CivilOS Hub',
     dataDescription: 'buildingInfo (BuildingExport) ও bnbcSettings (BNBCExport) — Module 2/4/7-এর হিসাবের ভিত্তি',
     firestorePath:
-      'Hub সরাসরি: projects/{projectId}/building_information/data, projects/{projectId}/bnbc_settings/data, projects/{projectId}/project_settings/data (hub-native-sync.ts) → আমাদের নিজের versioned copy: projects/{projectId}/estimatingInput/hubImports/{importId} + activeImport (pointer)',
+      'Hub সরাসরি: projects/{projectId}/building_information/data, projects/{projectId}/bnbc_settings/data, projects/{projectId}/project_settings/data (hub-native-sync.ts) → আমাদের নিজের versioned copy: projects/{projectId}/estimatingInput/root/hubImports/{importId} + activeImport (pointer)',
     isPathConfirmed: true, // Hub-এর প্রকৃত কোড থেকে verified (site-info.firestore.ts/building.firestore.ts/bnbc.firestore.ts/project-settings.firestore.ts) — EngineX-Structural ও EngineXProject-এর হুবহু একই verified path
     schemaVersion: '1.0',
     status: 'live', // hub-native-sync.ts সরাসরি Hub-এর document real-time subscribe করে, ম্যানুয়াল import আর নেই
