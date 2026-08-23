@@ -22,6 +22,7 @@
 
 import jsPDF from 'jspdf'
 import {
+  EstimateBasisContext,
   BOQReportContext,
   QuantityReportContext,
   CostReportContext,
@@ -32,6 +33,7 @@ import {
   ReportsAvailability,
 } from '@/lib/services/reports.service'
 import { calculateBBSRows } from '@/lib/services/reinforcement.service'
+import { drawEstimateBasisBody } from '@/lib/pdf/estimate-basis.pdf'
 import { drawBOQReportBody } from '@/lib/pdf/boq-report.pdf'
 import { drawQuantityReportBody } from '@/lib/pdf/quantity-report.pdf'
 import { drawCostReportBody } from '@/lib/pdf/cost-report.pdf'
@@ -51,6 +53,7 @@ import {
 
 export interface MasterReportContext {
   availability: ReportsAvailability
+  estimateBasis: EstimateBasisContext
   boq: BOQReportContext
   quantity: QuantityReportContext
   cost: CostReportContext
@@ -67,8 +70,12 @@ interface SectionDef {
 
 // REPORT_KINDS-এর (ReportsPanel.tsx) একই ক্রম অনুসরণ করা হয়েছে,
 // যাতে TOC-এর section-অর্ডার আর প্যানেলের বাটন-অর্ডার সামঞ্জস্যপূর্ণ
-// থাকে।
+// থাকে। estimateBasis সবচেয়ে আগে — cover sheet-এর ঠিক পরে narrative
+// context আসাই স্বাভাবিক document flow (BOQ/Quantity/Cost-এর আগে,
+// কারণ এই সেকশনগুলো estimateBasis-এ বর্ণিত rate/assumption-এর
+// ভিত্তিতে তৈরি)।
 const SECTION_DEFS: SectionDef[] = [
+  { key: 'estimateBasis', label: 'Estimate Basis' },
   { key: 'boq', label: 'Bill of Quantities (BOQ)' },
   { key: 'quantity', label: 'Quantity Report' },
   { key: 'cost', label: 'Cost Report' },
@@ -127,6 +134,9 @@ export function generateMasterReportPdf(context: MasterReportContext, meta: Omit
     const y = drawPdfHeader(doc, { ...reportMeta, reportTitle: section.label })
 
     switch (section.key) {
+      case 'estimateBasis':
+        drawEstimateBasisBody(doc, context.estimateBasis, y, { ...reportMeta, reportTitle: section.label })
+        break
       case 'boq':
         drawBOQReportBody(doc, context.boq, y, { ...reportMeta, reportTitle: section.label })
         break

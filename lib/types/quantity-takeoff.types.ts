@@ -37,6 +37,13 @@ export interface ArchitecturalFloorQuantities {
   paintAreaSqft: number
   doorQuantity: number
   windowQuantity: number
+  /** নতুন (২০২৬-০৮-২০) — Masonry BOQ auto-generate করতে thickness-সহ
+   * wall segment দরকার (wallAreaSqft/wallLengthFt দিয়ে brick volume
+   * বের করা যায় না)। ঐচ্ছিক, না থাকলে Masonry auto-calc স্কিপ হবে —
+   * পুরনো export (Architectural app আপডেট হওয়ার আগে) ভাঙবে না। */
+  masonryWalls?: MasonryWallSegment[]
+  /** নতুন — Finishing BOQ auto-generate করতে item-wise area দরকার। */
+  finishing?: FinishingQuantities
 }
 
 /**
@@ -55,6 +62,101 @@ export interface StructuralElementDimensions {
   widthFt: number
   depthFt: number // slab-এর ক্ষেত্রে thickness, column/beam-এর ক্ষেত্রে height/depth
   count: number // একই dimension-এর কতগুলো element আছে (যেমন 4টা একই সাইজের কর্নার কলাম) — প্রতিটা ভিন্ন element আলাদা এন্ট্রি না করে count দিয়ে গ্রুপ করা যায়
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ২০২৬-০৮-২০ সম্প্রসারণ — Earthwork/Masonry/Finishing/Stair/Roof
+// ═══════════════════════════════════════════════════════════════
+//
+// আগে StructuralFloorQuantities শুধু RCC (footing/column/beam/slab)
+// কভার করত — BOQ Generator তাই RCC ছাড়া বাকি সব ট্রেড manual-only
+// রাখতে বাধ্য হতো (CivilOS-Report-Audit.md-এর গুরুত্বপূর্ণ gap #2)।
+// এই সম্প্রসারণ সেই সীমাবদ্ধতা দূর করে — কিন্তু schema পুরোপুরি
+// redesign না করে, বিদ্যমান StructuralFloorQuantities/
+// ArchitecturalFloorQuantities-এর পাশে নতুন optional field হিসেবে
+// যোগ করা হয়েছে (backward-compatible: পুরনো export যেগুলোতে এই
+// field নেই সেগুলো এখনো valid থাকবে, শুধু সেই ট্রেডের auto-calc
+// শূন্য/স্কিপ হবে, crash করবে না)।
+
+/**
+ * Earthwork calculate করতে raw volume/area যথেষ্ট না — excavation
+ * depth ও plan area আলাদা দরকার (backfill percentage-ও, কারণ পুরো
+ * excavated volume ব্যাক-ফিল হয় না, ফাউন্ডেশন/ফুটিং জায়গা বাদ যায়)।
+ * Structural app থেকে এই তথ্য আসবে (footing/foundation-based
+ * excavation), তাই এটা StructuralFloorQuantities-এর সাথেই রাখা হলো
+ * (ground floor-এ প্রযোজ্য, উপরের floor-এ সাধারণত শূন্য)।
+ */
+export interface EarthworkQuantities {
+  excavationAreaSqft: number // ফাউন্ডেশন/ফুটিং-ভিত্তিক excavation plan area
+  excavationDepthFt: number
+  backfillPercentOfExcavation: number // সাধারণত ৬০-৭৫%, ফাউন্ডেশন/ফুটিং কংক্রিট বাদ দিয়ে যা ফেরত ভরাট হয় তার অনুপাত
+  disposalPercentOfExcavation: number // যা সাইটের বাইরে ফেলা হয় (backfill-এ যা ব্যবহার হয় না) — সাধারণত (100 - backfillPercent) এর কাছাকাছি কিন্তু ভিন্ন হতে পারে (extra imported fill লাগলে)
+}
+
+/**
+ * Masonry-এর জন্য শুধু wallAreaSqft (ArchitecturalFloorQuantities-এ
+ * আগে থেকেই আছে) যথেষ্ট না — wall thickness ছাড়া brick volume বের
+ * করা যায় না (৫" vs ১০" wall-এর brick+mortar পরিমাণ সম্পূর্ণ ভিন্ন)।
+ * এছাড়া external/internal/parapet আলাদা রাখা হয়েছে কারণ এদের
+ * thickness আলাদা হতে পারে ও BOQ-তে আলাদা লাইন-আইটেম হিসেবে দেখানো
+ * প্রচলিত।
+ */
+export interface MasonryWallSegment {
+  wallType: 'external' | 'internal' | 'parapet'
+  lengthFt: number
+  heightFt: number
+  thicknessIn: number // ইঞ্চিতে (৫", ১০" প্রচলিত — BNBC/দেশীয় brick masonry practice)
+  openingDeductionSqft: number // দরজা/জানালা opening বাদ — 0 হলে raw gross area ব্যবহার হবে
+}
+
+/**
+ * Finishing item-wise — আগে Finish Schedule শুধু "আছে/নাই" টাইপের
+ * schedule ছিল (Architectural-এ), quantity-takeoff-এ কোনো item-wise
+ * area ছিল না। Plaster (internal+external আলাদা, কারণ external
+ * plaster-এর mix ratio/thickness প্রায়ই ভিন্ন), Tiles, Paint,
+ * Ceiling, Waterproofing — BOQ-তে এই আলাদা লাইন-আইটেম হিসেবে আসা
+ * দরকার (audit gap #2 অনুযায়ী)।
+ */
+export interface FinishingQuantities {
+  internalPlasterAreaSqft: number
+  externalPlasterAreaSqft: number
+  tilesAreaSqft: number
+  paintAreaSqft: number // ArchitecturalFloorQuantities.paintAreaSqft থেকে ভিন্ন উদ্দেশ্যে না — সেটা heuristic-derived, এটা যদি আলাদা/নির্ভুল সোর্স থেকে আসে (Finishing schedule) সেটা override হিসেবে ব্যবহার করা যাবে
+  ceilingAreaSqft: number
+  waterproofingAreaSqft: number // ছাদ/টয়লেট/বারান্দা — একত্রে
+}
+
+/**
+ * Stair — audit gap #3 ("Structural-এ Stair পুরোপুরি unmodeled")।
+ * EngineX-Structural-এ stair design module কাজ চলছে (waist slab +
+ * landing beam continuous analysis), কিন্তু Hub-এ export mechanism
+ * এখনো তৈরি হয়নি (module-data.types.ts-এ কোনো stair-নির্দিষ্ট field
+ * নেই)। তাই এই দুটো field এখন "future-ready placeholder" হিসেবে যোগ
+ * করা হলো: Structural app থেকে wire করার সময় শুধু structural-mapper.ts
+ * ও module-data.types.ts আপডেট করলেই হবে, এই টাইপ বা BOQ
+ * service-এ আর কিছু বদলাতে হবে না। এখন পর্যন্ত এই field manual
+ * override-এর মাধ্যমেই পূরণ হবে (QuantityBreakdown-এর override UI,
+ * যা ইতিমধ্যে আছে)।
+ */
+export interface StairQuantities {
+  waistSlabVolumeM3: number // waist slab + landing slab concrete volume একত্রে
+  stairReinforcementKg: number
+  numberOfFlights: number // BOQ নোট/sanity-check-এর জন্য (volume থেকে স্বতন্ত্র তথ্য)
+}
+
+/**
+ * Roof-specific — audit অনুযায়ী "Roof Concrete/Reinforcement আলাদা
+ * category নেই (Slab-এর সাথে merge)"। বেশিরভাগ ক্ষেত্রে roof স্ল্যাব
+ * সাধারণ floor slab-এর মতোই আচরণ করে (তাই এখনো StructuralFloorQuantities.slabs-এ
+ * merge থাকা ভুল না), কিন্তু BOQ-তে "Roof RCC" আলাদা লাইন-আইটেম
+ * (waterproofing/parapet-এর সাথে যুক্ত হওয়ায় আলাদা ট্র্যাক করা
+ * সুবিধাজনক) — তাই এই optional flag, শুধু কোন floor "roof floor"
+ * সেটা চিহ্নিত করতে (roof floor-এর slabs আলাদা BOQ লাইনে দেখানোর
+ * জন্য, ডবল-কাউন্ট এড়াতে totalRccVolumeM3 হিসাবে roof slab এখনো
+ * যোগ থাকে, শুধু BOQ item-এর label/grouping ভিন্ন হয়)।
+ */
+export interface RoofFlags {
+  isRoofFloor: boolean
 }
 
 /**
@@ -80,6 +182,21 @@ export interface StructuralFloorQuantities {
   slabs: StructuralElementDimensions[]
   stairQuantity: number // স্টেয়ার সাধারণত সরল কাউন্ট হিসেবেই যথেষ্ট (volume হিসাব জটিল, ভবিষ্যতে দরকার হলে dimension যোগ করা যাবে)
   reinforcementQuantityKg: number // Module 7 (Reinforcement Estimation)-এর বিস্তারিত হিসাবের সাথে এটা মেলাতে হবে
+  /** নতুন (২০২৬-০৮-২০) — Earthwork BOQ auto-generate করতে দরকার,
+   * সাধারণত শুধু ground floor-এ থাকবে (উপরের floor-এ undefined/absent)। */
+  earthwork?: EarthworkQuantities
+  /** নতুন — future-ready placeholder। EngineX-Structural-এ stair
+   * design module কাজ চলছে (waist slab + landing beam) কিন্তু Hub-এ
+   * export mechanism এখনো তৈরি হয়নি (module-data.types.ts-এ
+   * stair-নির্দিষ্ট field নেই) — তাই এখন এটা সবসময় undefined আসবে
+   * Hub auto-sync থেকে, শুধু manual override দিয়ে ব্যবহারকারী
+   * পূরণ করবেন (stairQuantity সংখ্যার পাশাপাশি)। Structural app
+   * থেকে পরে wire করার সময় structural-mapper.ts-এ এই field populate
+   * করলেই BOQ/Cost/Reports automatically কাজ করবে, এখানে বা BOQ
+   * service-এ আর কিছু বদলাতে হবে না। */
+  stairDimensions?: StairQuantities
+  /** নতুন — কোন floor "roof floor" (RoofFlags দ্রষ্টব্য)। */
+  roof?: RoofFlags
 }
 
 /**

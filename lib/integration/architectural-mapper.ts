@@ -17,7 +17,7 @@
 // শুধু ব্যবহৃত অংশটুকু রাখা হয়েছে।
 
 import type { ArchitecturalModuleData } from '@/lib/types/module-data.types'
-import type { ArchitecturalFloorQuantities } from '@/lib/types/quantity-takeoff.types'
+import type { ArchitecturalFloorQuantities, MasonryWallSegment, FinishingQuantities } from '@/lib/types/quantity-takeoff.types'
 
 // ─── প্রকৃত producer shape (EngineXDraw এর apps/web/src/lib/hub/
 // hub-schedule-export.ts, buildScheduleExport() — field-নাম ও একক এই
@@ -41,6 +41,14 @@ interface WallScheduleRow {
   floorId?: string
   lengthM?: number
   height?: number
+  // ২০২৬-০৮-২০ যোগ — Masonry BOQ auto-generate করতে দরকার (audit gap
+  // #2)। EngineXDraw-এর wallSchedule-এ এই field এখনো নাও থাকতে পারে
+  // (buildScheduleExport()-এর ভবিষ্যৎ সংস্করণে যোগ হবে) — তাই সবই
+  // optional, undefined হলে masonryWalls-এ সেই wall বাদ পড়বে (নিচে
+  // দেখুন), crash না করে।
+  wallType?: string // Draw app থেকে যা আসবে তা আগে থেকে জানা নেই বলে string, নিচে normalize করে 'external'/'internal'/'parapet'-এ ম্যাপ করা হয়
+  thicknessIn?: number
+  openingDeductionSqft?: number
 }
 interface OpeningScheduleRow {
   id?: string
@@ -49,6 +57,21 @@ interface OpeningScheduleRow {
 interface FloorAreaRow {
   floorId?: string
   floorName?: string
+}
+// ২০২৬-০৮-২০ যোগ — Finishing BOQ auto-generate করতে item-wise area
+// দরকার (audit gap #2: "Finishing — manual")। Draw app-এর
+// finishSchedule shape এখনো অজানা (module-data.types.ts-এ `unknown`),
+// তাই এই সব field-ই optional ধরা হয়েছে — না থাকলে finishing
+// auto-calc পুরোপুরি স্কিপ হবে (undefined), silently ভুল সংখ্যা না
+// দেখিয়ে।
+interface FinishScheduleRow {
+  floorId?: string
+  internalPlasterAreaSqm?: number
+  externalPlasterAreaSqm?: number
+  tilesAreaSqm?: number
+  paintAreaSqm?: number
+  ceilingAreaSqm?: number
+  waterproofingAreaSqm?: number
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {
@@ -66,6 +89,78 @@ export interface ArchitecturalMapResult {
   warnings: string[]
 }
 
+const VALID_WALL_TYPES: MasonryWallSegment['wallType'][] = ['external', 'internal', 'parapet']
+
+/**
+ * একটা floor-এর wallRows-কে MasonryWallSegment[]-এ রূপান্তর করে —
+ * lengthM/height/wallType/thicknessIn এই চারটার যেকোনো একটা না
+ * থাকলে সেই individual wall বাদ (পুরো floor না) — একটা wall-এর
+ * thickness মিসিং থাকলেও বাকি wall-গুলোর volume এখনো নির্ভুলভাবে
+ * হিসাব করা সম্ভব, তাই partial data-তেও যতটা সম্ভব ব্যবহার করা
+ * হয়েছে (normalizeDimensions-এর structural-mapper.ts প্যাটার্নের
+ * অনুরূপ)।
+ */
+function normalizeMasonryWalls(wallsHere: WallScheduleRow[], floorLabel: string, warnings: string[]): MasonryWallSegment[] | undefined {
+  if (wallsHere.length === 0) return undefined
+
+  const segments = wallsHere
+    .map((w): MasonryWallSegment | null => {
+      const lengthM = asNum(w.lengthM)
+      const heightM = asNum(w.height)
+      const thicknessIn = asNum(w.thicknessIn)
+      const wallTypeRaw = asStr(w.wallType)
+      const wallType = VALID_WALL_TYPES.find((t) => t === wallTypeRaw)
+
+      if (lengthM === undefined || heightM === undefined || thicknessIn === undefined || !wallType) {
+        return null // এই wall-এ masonry-নির্দিষ্ট field (thicknessIn/wallType) নেই — পুরনো/আংশিক wallSchedule হতে পারে
+      }
+
+      return {
+        wallType,
+        lengthFt: lengthM * M_TO_FT,
+        heightFt: heightM * M_TO_FT,
+        thicknessIn,
+        openingDeductionSqft: (asNum(w.openingDeductionSqft) ?? 0),
+      }
+    })
+    .filter((s): s is MasonryWallSegment => s !== null)
+
+  if (segments.length === 0) {
+    warnings.push(`Floor "${floorLabel}"-এর wallSchedule-এ thicknessIn/wallType ডেটা নেই — Masonry auto-calc স্কিপ করা হয়েছে (wallLengthFt/wallAreaSqft এখনো হিসাব হয়েছে)।`)
+    return undefined
+  }
+  if (segments.length < wallsHere.length) {
+    warnings.push(`Floor "${floorLabel}"-এর কিছু wall entry-তে thicknessIn/wallType নেই — সেগুলো Masonry auto-calc-এ বাদ পড়েছে।`)
+  }
+
+  return segments
+}
+
+/**
+ * finishScheduleRows থেকে একটা floor-এর FinishingQuantities —
+ * সবগুলো field sqm থেকে sqft-এ রূপান্তর হয় (এই ফাইলের বাকি সব
+ * output ft-ভিত্তিক, একই কনভেনশন)। কোনো entry না পেলে undefined
+ * (BOQ service সেই floor-এর Finishing auto-item স্কিপ করবে)।
+ */
+function normalizeFinishing(row: FinishScheduleRow | undefined, floorLabel: string, warnings: string[]): FinishingQuantities | undefined {
+  if (!row) return undefined
+  const fields = [row.internalPlasterAreaSqm, row.externalPlasterAreaSqm, row.tilesAreaSqm, row.paintAreaSqm, row.ceilingAreaSqm, row.waterproofingAreaSqm]
+  if (fields.every((v) => v === undefined)) return undefined
+
+  if (fields.some((v) => v === undefined)) {
+    warnings.push(`Floor "${floorLabel}"-এর finishSchedule entry আংশিক — অনুপস্থিত item-গুলো শূন্য ধরা হয়েছে।`)
+  }
+
+  return {
+    internalPlasterAreaSqft: (asNum(row.internalPlasterAreaSqm) ?? 0) * SQM_TO_SQFT,
+    externalPlasterAreaSqft: (asNum(row.externalPlasterAreaSqm) ?? 0) * SQM_TO_SQFT,
+    tilesAreaSqft: (asNum(row.tilesAreaSqm) ?? 0) * SQM_TO_SQFT,
+    paintAreaSqft: (asNum(row.paintAreaSqm) ?? 0) * SQM_TO_SQFT,
+    ceilingAreaSqft: (asNum(row.ceilingAreaSqm) ?? 0) * SQM_TO_SQFT,
+    waterproofingAreaSqft: (asNum(row.waterproofingAreaSqm) ?? 0) * SQM_TO_SQFT,
+  }
+}
+
 /**
  * ArchitecturalModuleData.data-কে floor-ভিত্তিক
  * ArchitecturalFloorQuantities[]-এ রূপান্তর করে। কোনো schedule field
@@ -80,6 +175,7 @@ export function mapArchitecturalModuleDataToFloors(data: ArchitecturalModuleData
   const wallRows = asArray(data.wallSchedule) as WallScheduleRow[]
   const doorRows = asArray(data.doorSchedule) as OpeningScheduleRow[]
   const windowRows = asArray(data.windowSchedule) as OpeningScheduleRow[]
+  const finishRows = asArray(data.finishSchedule) as FinishScheduleRow[] // ২০২৬-০৮-২০ যোগ
 
   if (floorAreaRows.length === 0) {
     warnings.push('Architectural module data-তে floorAreas পাওয়া যায়নি — কোনো floor চিহ্নিত করা যায়নি।')
@@ -118,6 +214,8 @@ export function mapArchitecturalModuleDataToFloors(data: ArchitecturalModuleData
       const ceilingAreaSqft = floorAreaSqft
       const paintAreaSqft = wallAreaSqft + ceilingAreaSqft
 
+      const finishHere = finishRows.find((f) => f.floorId === floorId)
+
       const result: ArchitecturalFloorQuantities = {
         floorId,
         floorLabel,
@@ -128,6 +226,8 @@ export function mapArchitecturalModuleDataToFloors(data: ArchitecturalModuleData
         paintAreaSqft,
         doorQuantity: doorsHere.length,
         windowQuantity: windowsHere.length,
+        masonryWalls: normalizeMasonryWalls(wallsHere, floorLabel, warnings),
+        finishing: normalizeFinishing(finishHere, floorLabel, warnings),
       }
       return result
     })

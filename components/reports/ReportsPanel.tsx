@@ -23,6 +23,7 @@ import { useLang } from '@/components/providers/LanguageProvider'
 import {
   checkReportsAvailability,
   ReportsAvailability,
+  buildEstimateBasisContext,
   buildBOQReportContext,
   buildQuantityReportContext,
   buildCostReportContext,
@@ -31,6 +32,7 @@ import {
   buildTenderReportContext,
   buildCalculationSheetReportContext,
 } from '@/lib/services/reports.service'
+import { downloadEstimateBasisPdf } from '@/lib/pdf/estimate-basis.pdf'
 import { downloadBOQReportPdf } from '@/lib/pdf/boq-report.pdf'
 import { downloadQuantityReportPdf } from '@/lib/pdf/quantity-report.pdf'
 import { downloadCostReportPdf } from '@/lib/pdf/cost-report.pdf'
@@ -55,6 +57,7 @@ interface ReportsPanelProps {
 }
 
 const REPORT_LABEL_KEYS: Record<ReportKind, TranslationKey> = {
+  estimateBasis: 'estimateBasisReportLabel',
   boq: 'boqReportLabel',
   quantity: 'quantityReportLabel',
   cost: 'costReportLabel',
@@ -66,6 +69,7 @@ const REPORT_LABEL_KEYS: Record<ReportKind, TranslationKey> = {
 }
 
 const REPORT_UNAVAILABLE_KEYS: Record<ReportKind, TranslationKey> = {
+  estimateBasis: 'reportUnavailableEstimateBasis',
   boq: 'reportUnavailableBoq',
   quantity: 'reportUnavailableQuantity',
   cost: 'reportUnavailableCost',
@@ -76,7 +80,16 @@ const REPORT_UNAVAILABLE_KEYS: Record<ReportKind, TranslationKey> = {
   master: 'reportUnavailableMaster',
 }
 
-const REPORT_KINDS: Exclude<ReportKind, 'master'>[] = ['boq', 'quantity', 'cost', 'material', 'bbs', 'tender', 'calculationSheet']
+const REPORT_KINDS: Exclude<ReportKind, 'master'>[] = [
+  'estimateBasis',
+  'boq',
+  'quantity',
+  'cost',
+  'material',
+  'bbs',
+  'tender',
+  'calculationSheet',
+]
 
 export function ReportsPanel({ projectId, projectName, projectCode, clientName, location }: ReportsPanelProps) {
   const { t } = useLang()
@@ -105,6 +118,11 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
     try {
       const meta = { projectName, projectCode, clientName, location, generatedAt: Date.now() }
       switch (kind) {
+        case 'estimateBasis': {
+          const context = await buildEstimateBasisContext(projectId)
+          downloadEstimateBasisPdf(context, meta)
+          break
+        }
         case 'boq': {
           const context = await buildBOQReportContext(projectId)
           downloadBOQReportPdf(context, meta)
@@ -146,7 +164,8 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
           // Promise.all reject হয়ে পুরো Master Report আটকে যাবে না,
           // কারণ প্রতিটা build*ReportContext() নিজেই "নেই" অবস্থা
           // handle করে খালি/ডিফল্ট context রিটার্ন করে (throw করে না)।
-          const [boq, quantity, cost, material, bbs, tender, calculationSheet] = await Promise.all([
+          const [estimateBasis, boq, quantity, cost, material, bbs, tender, calculationSheet] = await Promise.all([
+            buildEstimateBasisContext(projectId),
             buildBOQReportContext(projectId),
             buildQuantityReportContext(projectId),
             buildCostReportContext(projectId),
@@ -157,7 +176,7 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
           ])
           const currentAvailability = availability ?? (await checkReportsAvailability(projectId))
           downloadMasterReportPdf(
-            { availability: currentAvailability, boq, quantity, cost, material, bbs, tender, calculationSheet },
+            { availability: currentAvailability, estimateBasis, boq, quantity, cost, material, bbs, tender, calculationSheet },
             meta
           )
           break

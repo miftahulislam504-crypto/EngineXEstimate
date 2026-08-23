@@ -87,6 +87,18 @@ export interface StructuralModuleData {
   structuralSteelQuantities?: unknown
   shopDrawingRevision?: unknown
   wasteFactors?: unknown
+  /** ২০২৬-০৮-২০ যোগ করা — future-ready placeholder। EngineX-Structural-এ
+   * stair design module কাজ চলছে (waist slab + landing beam continuous
+   * analysis, rcSlabFlexure.ts পুনর্ব্যবহার করে flexural design) কিন্তু
+   * এই মুহূর্তে সেই app কোনো stair geometry/quantity Hub-এ publish করে
+   * না। ধরে নেওয়া shape (Structural app যেদিন wire করবে):
+   *   { floorId: string, waistSlabVolumeM3: number,
+   *     stairReinforcementKg: number, numberOfFlights: number }[]
+   * এই field যোগ হলে structural-mapper.ts-এর mapStructuralModuleDataToFloors()
+   * শুধু এই একটা নতুন array read করলেই StructuralFloorQuantities.stairDimensions
+   * populate হয়ে যাবে — Estimating-এর আর কিছু বদলাতে হবে না
+   * (quantity-takeoff.types.ts-এর StairQuantities-এর নোট দ্রষ্টব্য)। */
+  stairQuantities?: unknown
 
   bbs?: unknown
   materialSummary?: unknown

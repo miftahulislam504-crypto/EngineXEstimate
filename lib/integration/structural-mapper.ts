@@ -30,7 +30,12 @@
 // বসাতে পারবেন — যেমন আগের ভার্সনেও ছিল)।
 
 import type { StructuralModuleData } from '@/lib/types/module-data.types'
-import type { StructuralElementDimensions, StructuralFloorQuantities } from '@/lib/types/quantity-takeoff.types'
+import type {
+  StructuralElementDimensions,
+  StructuralFloorQuantities,
+  EarthworkQuantities,
+  StairQuantities,
+} from '@/lib/types/quantity-takeoff.types'
 
 interface DimensionRow {
   elementId?: string
@@ -42,16 +47,41 @@ interface DimensionRow {
 interface FoundationRow {
   floorId?: string
   footings?: DimensionRow[]
+  // ২০২৬-০৮-২০ — Earthwork BOQ auto-generate করতে দরকার (audit gap #2)।
+  // foundationQuantities-এর সাথেই রাখা হলো কারণ excavation সবসময়
+  // foundation/footing-এর ওপর ভিত্তি করেই হয় — একই producer app,
+  // একই floor entry-তে ধরা যুক্তিসঙ্গত (আলাদা module-data field না
+  // বাড়িয়ে)।
+  excavationAreaSqft?: number
+  excavationDepthFt?: number
+  backfillPercentOfExcavation?: number
+  disposalPercentOfExcavation?: number
 }
 interface BeamColumnSlabRow {
   floorId?: string
   columns?: DimensionRow[]
   beams?: DimensionRow[]
   slabs?: DimensionRow[]
+  // ২০২৬-০৮-২০ — কোন floor "roof floor" (RoofFlags দ্রষ্টব্য,
+  // quantity-takeoff.types.ts)। beamColumnSlabQuantities-এর সাথেই
+  // রাখা হলো কারণ এটা slabs array-এর একটা metadata, আলাদা কিছু না।
+  isRoofFloor?: boolean
 }
 interface ReinforcementRow {
   floorId?: string
   totalKg?: number
+}
+// ২০২৬-০৮-২০ — future-ready placeholder (module-data.types.ts-এর
+// StructuralModuleData.stairQuantities নোট দ্রষ্টব্য)। EngineX-Structural
+// আজ পর্যন্ত এই shape পাঠায় না — Structural app যেদিন wire করবে
+// (hub.saveModuleData-এ stairQuantities যোগ করবে), এই mapper সেটা
+// স্বয়ংক্রিয়ভাবে StructuralFloorQuantities.stairDimensions-এ বসিয়ে
+// দেবে, Estimating-এর আর কোনো কোড বদলাতে হবে না।
+interface StairRow {
+  floorId?: string
+  waistSlabVolumeM3?: number
+  stairReinforcementKg?: number
+  numberOfFlights?: number
 }
 
 function asArray(value: unknown): Record<string, unknown>[] {
@@ -96,17 +126,76 @@ export interface StructuralMapResult {
  * union floorId থেকে বানানো হয় (কোনো একটা field-এ একটা floor না থাকলেও
  * বাকি দুটোতে থাকতে পারে বলে)।
  */
+/**
+ * FoundationRow-এর excavation field থেকে EarthworkQuantities বানায়
+ * — চারটা field-ই থাকলে তবেই একটা বৈধ EarthworkQuantities হয়
+ * (আংশিক ডেটা দিয়ে ভুল volume হিসাব করার চেয়ে undefined রাখা
+ * নিরাপদ, BOQ service সেই floor-এর Earthwork auto-item স্কিপ করবে)।
+ */
+function normalizeEarthwork(row: FoundationRow | undefined, floorLabel: string, warnings: string[]): EarthworkQuantities | undefined {
+  if (!row) return undefined
+  const excavationAreaSqft = asNum(row.excavationAreaSqft)
+  const excavationDepthFt = asNum(row.excavationDepthFt)
+  const backfillPercentOfExcavation = asNum(row.backfillPercentOfExcavation)
+  const disposalPercentOfExcavation = asNum(row.disposalPercentOfExcavation)
+
+  if (
+    excavationAreaSqft === undefined ||
+    excavationDepthFt === undefined ||
+    backfillPercentOfExcavation === undefined ||
+    disposalPercentOfExcavation === undefined
+  ) {
+    // এই floor-এ excavation field একেবারেই না থাকা স্বাভাবিক (উপরের
+    // floor-এ সাধারণত excavation নেই) — তাই শুধু আংশিকভাবে দেওয়া
+    // থাকলেই warning দেওয়া হচ্ছে, সম্পূর্ণ অনুপস্থিত থাকলে না
+    const anyProvided = [excavationAreaSqft, excavationDepthFt, backfillPercentOfExcavation, disposalPercentOfExcavation].some((v) => v !== undefined)
+    if (anyProvided) {
+      warnings.push(`Floor "${floorLabel}"-এর excavation ডেটা অসম্পূর্ণ — Earthwork auto-calc স্কিপ করা হয়েছে।`)
+    }
+    return undefined
+  }
+
+  return { excavationAreaSqft, excavationDepthFt, backfillPercentOfExcavation, disposalPercentOfExcavation }
+}
+
+/**
+ * future-ready — StairRow থেকে StairQuantities। EngineX-Structural
+ * আজ পর্যন্ত এই ডেটা পাঠায় না (উপরের StairRow কমেন্ট দ্রষ্টব্য),
+ * তাই stairRows সবসময় খালি array হবে এবং এই ফাংশন সবসময় undefined
+ * রিটার্ন করবে — কিন্তু Structural app wire হলে অতিরিক্ত কিছু না
+ * বদলেই এটা কাজ শুরু করবে।
+ */
+function normalizeStair(row: StairRow | undefined, floorLabel: string, warnings: string[]): StairQuantities | undefined {
+  if (!row) return undefined
+  const waistSlabVolumeM3 = asNum(row.waistSlabVolumeM3)
+  const stairReinforcementKg = asNum(row.stairReinforcementKg)
+  const numberOfFlights = asNum(row.numberOfFlights)
+
+  if (waistSlabVolumeM3 === undefined) {
+    warnings.push(`Floor "${floorLabel}"-এর stairQuantities entry-তে waistSlabVolumeM3 নেই — Stair auto-calc স্কিপ করা হয়েছে।`)
+    return undefined
+  }
+
+  return {
+    waistSlabVolumeM3,
+    stairReinforcementKg: stairReinforcementKg ?? 0,
+    numberOfFlights: numberOfFlights ?? 1,
+  }
+}
+
 export function mapStructuralModuleDataToFloors(data: StructuralModuleData): StructuralMapResult {
   const warnings: string[] = []
 
   const foundationRows = asArray(data.foundationQuantities) as FoundationRow[]
   const beamColumnSlabRows = asArray(data.beamColumnSlabQuantities) as BeamColumnSlabRow[]
   const reinforcementRows = asArray(data.reinforcementQuantities) as ReinforcementRow[]
+  const stairRows = asArray(data.stairQuantities) as StairRow[] // future-ready, EngineX-Structural wire হওয়ার আগে সবসময় খালি
 
   const floorIds = new Set<string>()
   for (const r of foundationRows) if (r.floorId) floorIds.add(r.floorId)
   for (const r of beamColumnSlabRows) if (r.floorId) floorIds.add(r.floorId)
   for (const r of reinforcementRows) if (r.floorId) floorIds.add(r.floorId)
+  for (const r of stairRows) if (r.floorId) floorIds.add(r.floorId)
 
   if (floorIds.size === 0) {
     warnings.push('Structural module data-তে কোনো floorId পাওয়া যায়নি (foundationQuantities/beamColumnSlabQuantities/reinforcementQuantities সবই খালি বা অনুপস্থিত)।')
@@ -118,6 +207,7 @@ export function mapStructuralModuleDataToFloors(data: StructuralModuleData): Str
     const foundation = foundationRows.find((r) => r.floorId === floorId)
     const bcs = beamColumnSlabRows.find((r) => r.floorId === floorId)
     const reinf = reinforcementRows.find((r) => r.floorId === floorId)
+    const stair = stairRows.find((r) => r.floorId === floorId)
 
     if (!foundation) warnings.push(`Floor "${floorLabel}"-এ foundationQuantities পাওয়া যায়নি — footings খালি।`)
     if (!bcs) warnings.push(`Floor "${floorLabel}"-এ beamColumnSlabQuantities পাওয়া যায়নি — columns/beams/slabs খালি।`)
@@ -132,6 +222,9 @@ export function mapStructuralModuleDataToFloors(data: StructuralModuleData): Str
       slabs: normalizeDimensions(bcs?.slabs, floorLabel, 'slab', warnings),
       stairQuantity: 0, // module-data shape-এ stair count নেই — override দিয়ে ব্যবহারকারী বসাতে পারবেন
       reinforcementQuantityKg: asNum(reinf?.totalKg) ?? 0,
+      earthwork: normalizeEarthwork(foundation, floorLabel, warnings),
+      stairDimensions: normalizeStair(stair, floorLabel, warnings), // আজ সবসময় undefined, future-ready
+      roof: bcs?.isRoofFloor ? { isRoofFloor: true } : undefined,
     }
   })
 

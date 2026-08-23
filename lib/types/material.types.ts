@@ -22,6 +22,10 @@ export type MaterialCategory =
   | 'brick'
   | 'tiles'
   | 'paint'
+  | 'door' // ২০২৬-০৮-২০ যোগ — Doors & Windows BOQ auto-wire করতে (audit gap #4: "Doors & Windows Quantity — manual"); architectural-mapper.ts ইতিমধ্যেই doorQuantity/windowQuantity গণনা করে, শুধু এই category না থাকায় BOQ/Cost-এ rate লাগানোর জন্য কোনো standard জায়গা ছিল না
+  | 'window' // উপরের নোট দ্রষ্টব্য
+  | 'electrical' // ２０２৬-０৮-２０ যোগ — Electrical module (audit gap #1: "Electrical — কোনো কোড নেই"); point/cable আইটেমের rate lookup-এর জন্য
+  | 'plumbing' // উপরের নোট দ্রষ্টব্য, Plumbing & Sanitary module-এর জন্য
   | 'other'
 
 /**
@@ -39,6 +43,8 @@ export type MaterialUnit =
   | 'sqft'
   | 'liter' // রং
   | 'sqm'
+  | 'point' // ２０２৬-０৮-２０ যোগ — Electrical point-item (composite wiring+accessory+labour rate), audit gap #1
+  | 'm' // ２０২৬-０৮-２０ যোগ — Cable/Pipe linear-meter rate (Electrical/Plumbing), audit gap #1
 
 export interface Supplier {
   id: string

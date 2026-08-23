@@ -2,15 +2,18 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Pencil } from 'lucide-react'
+import { Plus, Trash2, Pencil, Sparkles } from 'lucide-react'
 import { BBSRow, BarShape, StructuralMember } from '@/lib/types/reinforcement.types'
 import { getBBS, saveBBSRows } from '@/lib/firestore/reinforcement.firestore'
+import { getActiveQuantityTakeoff } from '@/lib/firestore/quantity-takeoff.firestore'
+import { effectiveStructuralQuantities } from '@/lib/types/quantity-takeoff.types'
 import {
   calculateBBSRows,
   summarizeBBSTotalWeight,
   summarizeBBSByDiameter,
   validateBBSRow,
   createBBSRow,
+  suggestBBSRowsFromAllFloors,
 } from '@/lib/services/reinforcement.service'
 import { useLang } from '@/components/providers/LanguageProvider'
 
@@ -45,12 +48,61 @@ export function BBSTable({ projectId }: BBSTableProps) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // ২০২৬-০৮-২০ যোগ — BBS auto-suggest from Quantity Takeoff (audit
+  // gap: "BBS পুরোপুরি manual")। suggestedRows আলাদা state-এ রাখা
+  // হয়েছে (rows-এর সাথে সরাসরি merge না করে) যাতে ব্যবহারকারী
+  // preview দেখে selectively accept করতে পারেন — সব suggestion
+  // silently rows-এ ঢুকিয়ে দিলে ভুল approximation persist হয়ে
+  // যাওয়ার ঝুঁকি থাকত (reinforcement.types.ts-এর
+  // TYPICAL_REBAR_RATIO_KG_PER_M3 নোট দ্রষ্টব্য — এটা approximation,
+  // চূড়ান্ত ডিজাইন না)।
+  const [suggestedRows, setSuggestedRows] = useState<BBSRow[] | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
+
   useEffect(() => {
     getBBS(projectId).then((stored) => {
       setRows(stored?.rows ?? [])
       setLoading(false)
     })
   }, [projectId])
+
+  async function handleSuggestFromQuantityTakeoff() {
+    setSuggesting(true)
+    setSuggestError(null)
+    try {
+      const takeoff = await getActiveQuantityTakeoff(projectId)
+      if (!takeoff || takeoff.structuralFloors.length === 0) {
+        setSuggestError(t('bbsSuggestNoTakeoff'))
+        return
+      }
+      const effectiveFloors = takeoff.structuralFloors.map((item) => effectiveStructuralQuantities(item))
+      const suggestions = suggestBBSRowsFromAllFloors(effectiveFloors)
+      if (suggestions.length === 0) {
+        setSuggestError(t('bbsSuggestNoVolume'))
+        return
+      }
+      setSuggestedRows(suggestions)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  async function handleAcceptSuggestion(row: BBSRow) {
+    await persistRows([...rows, row])
+    setSuggestedRows((prev) => prev?.filter((r) => r.id !== row.id) ?? null)
+  }
+
+  async function handleAcceptAllSuggestions() {
+    if (!suggestedRows || suggestedRows.length === 0) return
+    await persistRows([...rows, ...suggestedRows])
+    setSuggestedRows(null)
+  }
+
+  function handleDismissSuggestions() {
+    setSuggestedRows(null)
+    setSuggestError(null)
+  }
 
   const { calculated, warnings } = useMemo(() => calculateBBSRows(rows), [rows])
   const totalWeight = useMemo(() => summarizeBBSTotalWeight(calculated), [calculated])
@@ -86,11 +138,83 @@ export function BBSTable({ projectId }: BBSTableProps) {
           <h2 className="text-lg font-semibold text-text-primary">{t('bbsTitle')}</h2>
           <p className="text-sm text-text-muted mt-1">{t('bbsDescription')}</p>
         </div>
-        <button className="btn-primary shrink-0" onClick={() => setShowAddForm(true)}>
-          <Plus size={16} />
-          {t('newBar')}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            className="btn-outline"
+            onClick={handleSuggestFromQuantityTakeoff}
+            disabled={suggesting}
+            title={t('bbsSuggestTooltip')}
+          >
+            <Sparkles size={16} />
+            {suggesting ? t('loading') : t('suggestFromQuantityTakeoff')}
+          </button>
+          <button className="btn-primary" onClick={() => setShowAddForm(true)}>
+            <Plus size={16} />
+            {t('newBar')}
+          </button>
+        </div>
       </div>
+
+      {suggestError && (
+        <div className="rounded-lg border border-status-holdBorder bg-status-holdBg p-3 flex items-center justify-between">
+          <p className="text-xs text-status-holdText">{suggestError}</p>
+          <button onClick={handleDismissSuggestions} className="text-xs text-status-holdText underline shrink-0 ml-3">
+            {t('dismiss')}
+          </button>
+        </div>
+      )}
+
+      {suggestedRows && suggestedRows.length > 0 && (
+        <div className="card border-brand-200 bg-brand-50/30 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-text-primary">{t('bbsSuggestionsTitle')}</p>
+              <p className="text-xs text-text-muted mt-0.5">{t('bbsSuggestionsApproximationNote')}</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button className="btn-primary text-xs py-1.5 px-3" onClick={handleAcceptAllSuggestions}>
+                {t('acceptAll')}
+              </button>
+              <button className="btn-ghost text-xs py-1.5 px-3" onClick={handleDismissSuggestions}>
+                {t('dismissAll')}
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-text-muted text-left border-b border-surface-border">
+                  <th className="py-1.5 pr-3">{t('barMarkCol')}</th>
+                  <th className="py-1.5 pr-3">{t('memberCol')}</th>
+                  <th className="py-1.5 pr-3">{t('floorCol')}</th>
+                  <th className="py-1.5 pr-3">{t('diaCol')}</th>
+                  <th className="py-1.5 pr-3">{t('cuttingLCol')}</th>
+                  <th className="py-1.5 pr-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {suggestedRows.map((row) => (
+                  <tr key={row.id} className="border-b border-surface-border last:border-0">
+                    <td className="py-1.5 pr-3 text-text-primary">{row.barMark}</td>
+                    <td className="py-1.5 pr-3">{memberLabels[row.member]}</td>
+                    <td className="py-1.5 pr-3">{row.floorId ?? '—'}</td>
+                    <td className="py-1.5 pr-3">{row.diameterMm}mm</td>
+                    <td className="py-1.5 pr-3">{row.cuttingLengthM.toFixed(2)} m</td>
+                    <td className="py-1.5 pr-3">
+                      <button
+                        onClick={() => handleAcceptSuggestion(row)}
+                        className="text-xs text-brand-600 hover:underline"
+                      >
+                        {t('accept')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {showAddForm && (
         <BBSRowForm

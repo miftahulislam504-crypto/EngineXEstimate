@@ -14,6 +14,7 @@ import { listMaterials } from '@/lib/firestore/material.firestore'
 import { listResourceRates } from '@/lib/firestore/resource-rate.firestore'
 import { getBBS } from '@/lib/firestore/reinforcement.firestore'
 import { getTender, getLatestEngineerEstimate, getTenderFinalizationHistory } from '@/lib/firestore/tender.firestore'
+import { getActiveHubImport, StoredHubImport } from '@/lib/firestore/hub-import.firestore'
 
 import { BOQItem, BOQVersion, BOQUnit } from '@/lib/types/boq.types'
 import {
@@ -27,11 +28,65 @@ import { BBSRow } from '@/lib/types/reinforcement.types'
 import { EngineerEstimate, ContractorBid, TenderFinalization } from '@/lib/types/tender.types'
 import { RateAnalysisCostBreakdown } from '@/lib/types/rate-analysis.types'
 
-import { calculateProjectCostSummary, ProjectCostSummary } from '@/lib/services/dashboard.service'
+import {
+  calculateProjectCostSummary,
+  ProjectCostSummary,
+  summarizeCostByTrade,
+  summarizeCostByFloor,
+  calculateCostPerArea,
+  TradeCostSlice,
+  FloorCostSlice,
+  CostPerAreaSummary,
+} from '@/lib/services/dashboard.service'
 import { calculateRateFromLoadedRates } from '@/lib/services/rate-analysis.service'
 import { calculateBBSRows } from '@/lib/services/reinforcement.service'
 import { summarizeFloorVolumes } from '@/lib/services/quantity-takeoff.service'
 import { buildComparativeStatement, ComparativeStatementRow } from '@/lib/services/tender.service'
+
+// ── Estimate Basis (নতুন, ２০২৬-０８-２０, audit gap: "কোনো narrative
+// Estimate Basis পৃষ্ঠা নেই কোনো রিপোর্টে") ─────────────────────────
+//
+// Cover Sheet/Project Info/Measurement Rules/Schedule of Rates/Rate
+// source/Assumptions — এই সবকিছুর ডেটা ইতিমধ্যেই সিস্টেমে ছড়িয়ে
+// আছে (Hub থেকে sync হওয়া buildingInfo/bnbcSettings/projectSettings,
+// আর Material/Rate library-এর source metadata), শুধু কোনো একটা
+// একত্রিত narrative section হিসেবে কখনো প্রদর্শিত হয়নি। এই context
+// সেই সব একত্র করে — কোনো নতুন hisab নেই, শুধু বিদ্যমান ডেটার
+// presentational aggregation (এই ফাইলের বাকি সব builder-এর একই
+// নীতি, ফাইলের শীর্ষ কমেন্ট দ্রষ্টব্য)।
+
+export interface EstimateBasisContext {
+  hubImport: StoredHubImport | null // buildingInfo/bnbcSettings/projectSettings — না থাকলে (Hub sync এখনো হয়নি) Project Info/BNBC section খালি থাকবে
+  materialCount: number
+  activeMaterialCount: number
+  labourRateCount: number
+  equipmentRateCount: number
+  boqItemCount: number
+}
+
+/**
+ * hub-native-sync.ts স্বয়ংক্রিয়ভাবে Hub থেকে buildingInfo/bnbcSettings
+ * sync করে (connection-registry.ts দ্রষ্টব্য) — সেই ডেটাই এখানে
+ * পুনর্ব্যবহার করা হচ্ছে, নতুন কোনো Hub read/API call নেই।
+ */
+export async function buildEstimateBasisContext(projectId: string): Promise<EstimateBasisContext> {
+  const [hubImport, materials, labourRates, equipmentRates, boqVersion] = await Promise.all([
+    getActiveHubImport(projectId),
+    listMaterials(),
+    listResourceRates('labour'),
+    listResourceRates('equipment'),
+    getActiveBOQVersion(projectId),
+  ])
+
+  return {
+    hubImport,
+    materialCount: materials.length,
+    activeMaterialCount: materials.filter((m) => m.isActive).length,
+    labourRateCount: labourRates.filter((r) => r.isActive).length,
+    equipmentRateCount: equipmentRates.filter((r) => r.isActive).length,
+    boqItemCount: boqVersion?.items.length ?? 0,
+  }
+}
 
 // ── BOQ Report ─────────────────────────────────────────────────────
 
@@ -64,6 +119,15 @@ export async function buildQuantityReportContext(projectId: string): Promise<Qua
 export interface CostReportContext {
   boqItems: BOQItem[]
   summary: ProjectCostSummary | null
+  // ২০২৬-০৮-২০ যোগ — Trade-wise/Floor-wise breakdown ও Cost/sqft
+  // (audit gap #4), dashboard.service.ts-এর ProjectDashboard.tsx-এর
+  // সাথে সামঞ্জস্যপূর্ণ রাখতে একই ফাংশন এখানেও পুনর্ব্যবহার করা
+  // হয়েছে, যাতে "Dashboard-এ এক নম্বর, PDF রিপোর্টে আরেক নম্বর" এই
+  // বৈসাদৃশ্য এখানেও এড়ানো যায় (ঠিক উপরের comment-এর summary-র
+  // মতোই নীতি)।
+  tradeCosts: TradeCostSlice[]
+  floorCosts: FloorCostSlice[]
+  costPerArea: CostPerAreaSummary | undefined
 }
 
 /**
@@ -73,27 +137,32 @@ export interface CostReportContext {
  * বৈসাদৃশ্য তৈরি না হয়।
  */
 export async function buildCostReportContext(projectId: string): Promise<CostReportContext> {
-  const [boqVersion, rateAnalysis, materials, labourRates, equipmentRates] = await Promise.all([
+  const [boqVersion, rateAnalysis, materials, labourRates, equipmentRates, takeoff] = await Promise.all([
     getActiveBOQVersion(projectId),
     getRateAnalysis(projectId),
     listMaterials(),
     listResourceRates('labour'),
     listResourceRates('equipment'),
+    getActiveQuantityTakeoff(projectId), // ２０２৬-০৮-২০ যোগ — Cost per sqft/sqm-এর জন্য floor area দরকার
   ])
 
   const boqItems = boqVersion?.items ?? []
   if (boqItems.length === 0) {
-    return { boqItems: [], summary: null }
+    return { boqItems: [], summary: null, tradeCosts: [], floorCosts: [], costPerArea: undefined }
   }
 
-  const summary = calculateProjectCostSummary(
-    boqItems,
-    rateAnalysis?.entries ?? [],
-    materials,
-    labourRates,
-    equipmentRates
+  const entries = rateAnalysis?.entries ?? []
+  const summary = calculateProjectCostSummary(boqItems, entries, materials, labourRates, equipmentRates)
+  const tradeCosts = summarizeCostByTrade(boqItems, entries, materials, labourRates, equipmentRates)
+  const floorCosts = summarizeCostByFloor(boqItems, entries, materials, labourRates, equipmentRates)
+
+  const totalFloorAreaSqft = (takeoff?.architecturalFloors ?? []).reduce(
+    (sum, item) => sum + effectiveArchitecturalQuantities(item).floorAreaSqft,
+    0
   )
-  return { boqItems, summary }
+  const costPerArea = calculateCostPerArea(summary.totalProjectCost, totalFloorAreaSqft)
+
+  return { boqItems, summary, tradeCosts, floorCosts, costPerArea }
 }
 
 // ── Material Report ────────────────────────────────────────────────
@@ -250,6 +319,7 @@ export async function buildCalculationSheetReportContext(projectId: string): Pro
 // ── Availability check (রিপোর্ট বাটন disable করার জন্য) ────────────
 
 export interface ReportsAvailability {
+  estimateBasis: boolean
   boq: boolean
   quantity: boolean
   cost: boolean
@@ -266,16 +336,22 @@ export interface ReportsAvailability {
  * এড়ানো" নীতি অনুসরণ করে।
  */
 export async function checkReportsAvailability(projectId: string): Promise<ReportsAvailability> {
-  const [boqVersion, takeoff, rateAnalysis, materials, bbs, tender] = await Promise.all([
+  const [boqVersion, takeoff, rateAnalysis, materials, bbs, tender, hubImport] = await Promise.all([
     getActiveBOQVersion(projectId),
     getActiveQuantityTakeoff(projectId),
     getRateAnalysis(projectId),
     listMaterials(),
     getBBS(projectId),
     getTender(projectId),
+    getActiveHubImport(projectId), // ２０２৬-０８-２０ যোগ — Estimate Basis section-এর জন্য
   ])
 
   return {
+    // hubImport না থাকলেও materialCount > 0 থাকলে Estimate Basis
+    // এখনো অর্থবহ (অন্তত Rate Source section দেখানোর মতো ডেটা আছে)
+    // — তাই দুটোর যেকোনো একটা থাকলেই section দেখানো হয়, শূন্য
+    // প্রজেক্টে "সব ফাঁকা" পাতা এড়াতে।
+    estimateBasis: !!hubImport || materials.filter((m) => m.isActive).length > 0,
     boq: !!boqVersion && boqVersion.items.length > 0,
     quantity: !!takeoff && (takeoff.architecturalFloors.length > 0 || takeoff.structuralFloors.length > 0),
     cost: !!boqVersion && boqVersion.items.length > 0 && !!rateAnalysis && rateAnalysis.entries.length > 0,

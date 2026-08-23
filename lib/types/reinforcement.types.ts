@@ -72,3 +72,36 @@ export interface StoredBBS {
   updatedAt: number
   rows: BBSRow[]
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ২০২৬-০৮-২০ যোগ — BBS auto-derive from RCC volume (audit gap: "BBS
+// পুরোপুরি manual, RCC volume থেকে auto-suggest নেই")
+// ═══════════════════════════════════════════════════════════════
+//
+// একটা সীমাবদ্ধতা প্রথমেই স্পষ্ট করা দরকার: bar-level detail
+// (diameter/shape/cutting length/lap) RCC volume থেকে গাণিতিকভাবে
+// derive করা সম্ভব না — এর জন্য প্রকৃত structural design (rebar
+// spacing, bar cut-list) লাগে, যা Structural app-এর কাজ (এখনো Hub-এ
+// bar-level detail export হয় না, শুধু totalRccVolumeM3/
+// reinforcementQuantityKg flat summary আসে)।
+//
+// তাই এই "auto-derive" একটা approximation: member-type অনুযায়ী
+// প্রচলিত rebar ratio (kg প্রতি m³ কংক্রিট, দেশীয় নির্মাণ চর্চায়
+// সাধারণত ব্যবহৃত পরিসীমার মাঝামাঝি মান) দিয়ে RCC volume থেকে একটা
+// single-row "approximate" BBS entry তৈরি হয় — diameter সবচেয়ে
+// প্রচলিত ১৬mm ধরা হয় (typical main bar size), shape 'straight'
+// (কোনো bend/hook allowance ছাড়া, কারণ এটা প্রকৃত bar cut-list না)।
+// ব্যবহারকারী এই row edit করে প্রকৃত bar-level detail বসাতে পারবেন —
+// BBSTable.tsx-এ এটা normal BBSRow-এর মতোই editable থাকে, শুধু
+// শুরুর মান এখানে থেকে আসে। এটা একটা starting point, চূড়ান্ত নকশা
+// না — UI-তে এই সতর্কতা স্পষ্টভাবে দেখানো হয় (নিচের
+// APPROXIMATION_WARNING দ্রষ্টব্য)।
+export const TYPICAL_REBAR_RATIO_KG_PER_M3: Record<StructuralMember, number> = {
+  footing: 80, // ফুটিং — তুলনামূলক কম রড ঘনত্ব
+  column: 150, // কলাম — উচ্চ রড ঘনত্ব (heavy load path)
+  beam: 120,
+  slab: 90,
+  stair: 110, // waist slab + landing, slab-এর কাছাকাছি কিন্তু সামান্য বেশি (landing beam সহ)
+}
+
+export const APPROXIMATION_WARNING_KEY = 'bbsAutoApproximationWarning' // i18n key, UI-তে সরাসরি ব্যবহারের জন্য

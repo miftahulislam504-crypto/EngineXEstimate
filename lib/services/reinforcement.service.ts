@@ -4,7 +4,15 @@
 // Total Weight। unit weight standard table থেকে (diameter অনুযায়ী)
 // অথবা ব্যবহারকারীর override থেকে।
 
-import { BBSRow, BBSRowCalculated, STANDARD_BAR_WEIGHT_PER_METER } from '@/lib/types/reinforcement.types'
+import {
+  BBSRow,
+  BBSRowCalculated,
+  STANDARD_BAR_WEIGHT_PER_METER,
+  StructuralMember,
+  TYPICAL_REBAR_RATIO_KG_PER_M3,
+} from '@/lib/types/reinforcement.types'
+import { StructuralFloorQuantities } from '@/lib/types/quantity-takeoff.types'
+import { summarizeFloorVolumes } from '@/lib/services/quantity-takeoff.service'
 
 /**
  * একটা diameter-এর জন্য effective unit weight — override থাকলে সেটা,
@@ -129,3 +137,94 @@ function generateRowId(): string {
 export function createBBSRow(input: Omit<BBSRow, 'id'>): BBSRow {
   return { ...input, id: generateRowId() }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ২০২৬-০৮-২০ যোগ — BBS auto-derive (reinforcement.types.ts-এর
+// TYPICAL_REBAR_RATIO_KG_PER_M3 নোট দ্রষ্টব্য: এটা approximation,
+// প্রকৃত bar-level design না)
+// ═══════════════════════════════════════════════════════════════
+
+const ASSUMED_DIAMETER_MM = 16 // সবচেয়ে প্রচলিত main bar size — approximation-এর একটাই diameter ধরে single-row রাখা হয়েছে, একাধিক diameter split করলে ভুল নির্ভুলতার বিভ্রম তৈরি হতো
+const ASSUMED_WASTAGE_PERCENT = 3 // দেশীয় নির্মাণ চর্চায় সাধারণ কাটিং/হ্যান্ডলিং loss
+
+/**
+ * একটা StructuralFloorQuantities থেকে member-ভিত্তিক (footing/
+ * column/beam/slab) suggested BBSRow[] তৈরি করে —
+ * TYPICAL_REBAR_RATIO_KG_PER_M3 দিয়ে RCC volume থেকে আনুমানিক total
+ * weight বের করে, সেই weight থেকে "reverse" করে একটা
+ * cuttingLengthM/numberOfBars জোড়া বানানো হয় (numberOfBars=1,
+ * cuttingLengthM = weightBeforeWastage / effectiveUnitWeight —
+ * অর্থাৎ এই একটা "virtual bar"-এর length-ই আসলে মোট প্রয়োজনীয়
+ * বার-দৈর্ঘ্য, প্রকৃত bar count/length বিভাজন না)। এই পদ্ধতি
+ * ইচ্ছাকৃতভাবে সরল রাখা হয়েছে যাতে ব্যবহারকারী সহজেই বুঝে edit
+ * করতে পারেন — জটিল multi-bar breakdown অনুমান করলে ভুল
+ * নির্দিষ্টতা তৈরি হতো।
+ *
+ * stair এখানে অন্তর্ভুক্ত না — StructuralFloorQuantities.stairQuantity
+ * সরল সংখ্যা (nos), volume না, তাই TYPICAL_REBAR_RATIO_KG_PER_M3ের
+ * volume-ভিত্তিক সূত্র সরাসরি প্রযোজ্য না। stairDimensions (নতুন
+ * optional field, থাকলে) waistSlabVolumeM3 দেয় — সেটা থাকলে আলাদাভাবে
+ * ধরা হয়েছে নিচে।
+ *
+ * ভলিউম শূন্য/অনুপস্থিত এমন member বাদ পড়ে (boq.service.ts-এর
+ * `if (volume <= 0)` একই নীতি)।
+ */
+export function suggestBBSRowsFromFloor(floor: StructuralFloorQuantities): BBSRow[] {
+  const volumes = summarizeFloorVolumes(floor)
+  const memberVolumes: { member: StructuralMember; volumeM3: number }[] = [
+    { member: 'footing', volumeM3: volumes.footingVolumeM3 },
+    { member: 'column', volumeM3: volumes.columnVolumeM3 },
+    { member: 'beam', volumeM3: volumes.beamVolumeM3 },
+    { member: 'slab', volumeM3: volumes.slabVolumeM3 },
+    // ২০২৬-০৮-২০ — stairDimensions থাকলে (mainly manual override,
+    // structural-mapper.ts future-ready নোট দ্রষ্টব্য) volume-ভিত্তিক
+    // suggestion সম্ভব। stairReinforcementKg নিজেই দেওয়া থাকলে সেটা
+    // ব্যবহারকারীর সরাসরি input হিসেবে অগ্রাধিকার পাওয়া উচিত (এই
+    // ফাংশনের বাইরে, BBSTable-এ), তাই এখানে শুধু ratio-ভিত্তিক
+    // approximation, waistSlabVolumeM3 থেকে।
+    { member: 'stair', volumeM3: floor.stairDimensions?.waistSlabVolumeM3 ?? 0 },
+  ]
+
+  const unitWeight = STANDARD_BAR_WEIGHT_PER_METER[ASSUMED_DIAMETER_MM] // 16mm সবসময় standard table-এ আছে (reinforcement.types.ts), তাই undefined হওয়ার সম্ভাবনা নেই — তবু নিচে 0 হলে row বাদ দেওয়া হবে defensively
+
+  const rows: BBSRow[] = []
+  for (const { member, volumeM3 } of memberVolumes) {
+    if (volumeM3 <= 0) continue
+    const totalWeightKg = volumeM3 * TYPICAL_REBAR_RATIO_KG_PER_M3[member]
+    if (!unitWeight || totalWeightKg <= 0) continue
+
+    // wastage-সহ target weight থেকে wastage-ছাড়া weight বের করে
+    // cuttingLengthM হিসাব — calculateBBSRow()-এর ফরওয়ার্ড হিসাবের
+    // ঠিক উল্টো (totalWeightKg = totalLengthM × unitWeight × (1 +
+    // wastage/100))
+    const weightBeforeWastage = totalWeightKg / (1 + ASSUMED_WASTAGE_PERCENT / 100)
+    const cuttingLengthM = weightBeforeWastage / unitWeight
+
+    rows.push(
+      createBBSRow({
+        barMark: `${member.charAt(0).toUpperCase()}${member.slice(1)}-Auto`,
+        member,
+        floorId: floor.floorId,
+        diameterMm: ASSUMED_DIAMETER_MM,
+        shape: 'straight',
+        cuttingLengthM: Math.round(cuttingLengthM * 100) / 100,
+        numberOfBars: 1, // "virtual bar" — cuttingLengthM ইতিমধ্যেই মোট প্রয়োজনীয় দৈর্ঘ্য ধারণ করে, উপরের ফাংশন-কমেন্ট দ্রষ্টব্য
+        lapLengthM: 0,
+        numberOfLaps: 0,
+        wastagePercent: ASSUMED_WASTAGE_PERCENT,
+      })
+    )
+  }
+
+  return rows
+}
+
+/**
+ * একাধিক floor-এর জন্য suggestBBSRowsFromFloor() একসাথে চালায় —
+ * BBSTable.tsx-এর "Auto-suggest from Quantity Takeoff" বাটন এই
+ * ফাংশন কল করবে (প্রতিটা floor-এর জন্য আলাদা)।
+ */
+export function suggestBBSRowsFromAllFloors(floors: StructuralFloorQuantities[]): BBSRow[] {
+  return floors.flatMap((floor) => suggestBBSRowsFromFloor(floor))
+}
+

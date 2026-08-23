@@ -25,6 +25,8 @@ import {
   TrendingUp,
   FileText,
   Plug,
+  Zap,
+  Droplets,
   type LucideIcon,
 } from 'lucide-react'
 import { Lang } from '@/lib/i18n'
@@ -38,6 +40,8 @@ export type SidebarLabelKey =
   | 'navVendors'
   | 'navProcurement'
   | 'navReinforcement'
+  | 'navElectrical' // ２０২৬-０৮-２０ যোগ, Module 16 (audit gap #1)
+  | 'navPlumbing' // ２０২৬-０৮-２০ যোগ, Module 17 (audit gap #1)
   | 'navBudget'
   | 'navTender'
   | 'navCostTracking'
@@ -62,6 +66,11 @@ export const ESTIMATING_MODULES: EstimatingModule[] = [
   { path: 'vendor', sidebarLabelKey: 'navVendors', icon: Truck, moduleNumber: 9 },
   { path: 'procurement', sidebarLabelKey: 'navProcurement', icon: ClipboardList, moduleNumber: 8 },
   { path: 'reinforcement', sidebarLabelKey: 'navReinforcement', icon: Layers, moduleNumber: 7 },
+  // ２０২৬-０৮-２０ যোগ — Electrical/Plumbing, reinforcement-এর ঠিক পরে
+  // sidebar position, কারণ conceptually এটাও "detailed trade-level
+  // input" module (BBS-এর মতোই manual entry, BOQ-তে auto-export)।
+  { path: 'electrical', sidebarLabelKey: 'navElectrical', icon: Zap, moduleNumber: 16 },
+  { path: 'plumbing', sidebarLabelKey: 'navPlumbing', icon: Droplets, moduleNumber: 17 },
   { path: 'budget', sidebarLabelKey: 'navBudget', icon: Wallet, moduleNumber: 10 },
   { path: 'tender', sidebarLabelKey: 'navTender', icon: Gavel, moduleNumber: 12 },
   { path: 'cost-tracking', sidebarLabelKey: 'navCostTracking', icon: TrendingUp, moduleNumber: 11 },

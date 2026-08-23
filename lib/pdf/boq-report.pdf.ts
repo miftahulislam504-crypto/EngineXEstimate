@@ -4,16 +4,20 @@
 // সরাসরি table বানানো হয় — কোনো নতুন calculation নেই।
 //
 // ── Phase 3 আপগ্রেড ──────────────────────────────────────────────
-// cover page, এবং items-কে দুই section-এ ভাগ: "Auto-generated (RCC)"
-// vs "Manual / Custom Items"। এই grouping BOQItem.source ফিল্ডের
-// ওপর ভিত্তি করে — Earthwork/Masonry/Finishing-এর মতো true
-// category BOQItem টাইপে নেই (boq.types.ts-এর কমেন্ট দেখুন: এই
-// মুহূর্তে শুধু RCC auto-generate হয়, বাকি সবই "Custom Item" হিসেবে
-// manual, প্রকৃত category-metadata ছাড়া) — তাই source-ভিত্তিক
-// grouping-ই একমাত্র grouping যা ডেটাতে সত্যিই আছে, বানানো category
-// বসানো হয়নি। এছাড়া version history-র একটা সংক্ষিপ্ত সারণি যোগ
-// হয়েছে (context.history আগে থেকেই fetch হতো কিন্তু builder ব্যবহার
-// করত না)।
+// cover page, এবং items-কে সেকশনে ভাগ। এছাড়া version history-র একটা
+// সংক্ষিপ্ত সারণি যোগ হয়েছে (context.history আগে থেকেই fetch হতো
+// কিন্তু builder ব্যবহার করত না)।
+//
+// ── ২০২৬-০৮-২০ আপডেট (audit gap #2 সমাধানের অংশ) ──────────────────
+// boq.service.ts এখন RCC ছাড়াও Earthwork/Masonry/Finishing/Stair
+// auto-generate করে (৪টা নতুন BOQItemSource)। আগে এখানে grouping
+// ছিল শুধু "auto_rcc হলে Auto, নাহলে Manual" — এই বাইনারি চেকের
+// কারণে নতুন auto-source গুলো ভুলভাবে "Manual / Custom Items"
+// section-এ পড়ে যেত (BOQGenerator.tsx-এ একই ধরনের bug ছিল, ওখানে
+// AUTO_SOURCES/sourceLabel() দিয়ে ঠিক করা হয়েছে)। এখানে trade-ভিত্তিক
+// আলাদা section (RCC/Earthwork/Masonry/Finishing/Stair/Manual) —
+// এখন BOQItem.source-এ প্রকৃত trade-metadata আছে বলে এই grouping
+// বাস্তব ডেটার ওপর ভিত্তি করেই সম্ভব, আগের মতো বানানো category না।
 //
 // ── Phase 5 রিফ্যাক্টর ───────────────────────────────────────────
 // body-drawing লজিক drawBOQReportBody()-এ বের করা হয়েছে (header
@@ -24,7 +28,7 @@
 
 import jsPDF from 'jspdf'
 import { BOQReportContext } from '@/lib/services/reports.service'
-import { BOQItem, BOQ_UNIT_LABELS } from '@/lib/types/boq.types'
+import { BOQItem, BOQItemSource, BOQ_UNIT_LABELS } from '@/lib/types/boq.types'
 import {
   drawPdfHeader,
   drawPdfFooter,
@@ -71,15 +75,30 @@ export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY:
     return y + 8
   }
 
-  const autoItems = context.version.items.filter((item) => item.source === 'auto_rcc')
+  // ট্রেড-ভিত্তিক section order — নির্মাণের স্বাভাবিক ক্রম অনুসরণ করে
+  // (মাটির কাজ → RCC → গাঁথুনি → ফিনিশিং → স্টেয়ার), BOQ document-এ
+  // এই ক্রম-ই প্রচলিত। প্রতিটা group শুধু তখনই section পায় যখন
+  // items.length > 0 — খালি section দেখানো হয় না।
+  const TRADE_GROUPS: { source: BOQItemSource; title: string }[] = [
+    { source: 'auto_earthwork', title: 'Earthwork (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_rcc', title: 'RCC (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_stair', title: 'Stair (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_masonry', title: 'Masonry / Brick Work (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_finishing', title: 'Finishing (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_doors_windows', title: 'Doors & Windows (Auto-generated — from Quantity Takeoff)' },
+    { source: 'auto_electrical', title: 'Electrical (Auto-generated — from Module 16)' },
+    { source: 'auto_plumbing', title: 'Plumbing & Sanitary (Auto-generated — from Module 17)' },
+  ]
+  const groupedItems = TRADE_GROUPS.map((g) => ({ ...g, items: context.version!.items.filter((item) => item.source === g.source) }))
   const manualItems = context.version.items.filter((item) => item.source === 'manual')
+  const autoCount = context.version.items.length - manualItems.length
 
   y = drawSectionTitle(doc, 'Overview', y, reportMeta)
   y = drawStatCards(
     doc,
     [
       { label: 'Total Line Items', value: String(context.version.items.length), accent: PDF_CHART_PALETTE[0] },
-      { label: 'Auto-generated (RCC)', value: String(autoItems.length), accent: PDF_CHART_PALETTE[1] },
+      { label: 'Auto-generated', value: String(autoCount), accent: PDF_CHART_PALETTE[1] },
       { label: 'Manual / Custom', value: String(manualItems.length), accent: PDF_CHART_PALETTE[3] },
     ],
     y,
@@ -88,16 +107,27 @@ export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY:
   y = drawSummaryLine(doc, 'BOQ Version', context.version.versionId, y, reportMeta)
   y += 6
 
-  if (autoItems.length > 0) {
-    y = drawSectionTitle(doc, 'Auto-generated Items (RCC — from Quantity Takeoff)', y, reportMeta)
-    y = drawItemsTable(doc, y, autoItems)
+  let firstSectionDrawn = false
+  for (const group of groupedItems) {
+    if (group.items.length === 0) continue
+    if (firstSectionDrawn) {
+      // প্রথম section আগের overview-এর পরপরই বসে (একই পাতায়), তার
+      // পরের প্রতিটা trade section নতুন পাতায় — একটা বড় table
+      // page-break-এর মাঝে কাটা পড়ার ঝুঁকি এড়াতে (BOQ-তে একটা
+      // trade-এর row ভেঙে দুই পাতায় পড়লে পড়তে অসুবিধা হয়)
+      doc.addPage()
+      y = drawPdfHeader(doc, reportMeta)
+    }
+    y = drawSectionTitle(doc, group.title, y, reportMeta)
+    y = drawItemsTable(doc, y, group.items)
+    firstSectionDrawn = true
   }
 
   if (manualItems.length > 0) {
-    // নতুন পাতা — auto items table-এর ঠিক পরপরই দ্বিতীয় বড় table
-    // শুরু হলে page-break-এর মাঝে কাটা পড়ার ঝুঁকি বেশি
-    doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    if (firstSectionDrawn) {
+      doc.addPage()
+      y = drawPdfHeader(doc, reportMeta)
+    }
     y = drawSectionTitle(doc, 'Manual / Custom Items', y, reportMeta)
     y = drawItemsTable(doc, y, manualItems)
   }

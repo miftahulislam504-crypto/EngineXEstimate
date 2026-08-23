@@ -19,7 +19,16 @@
 // আর Reports & Export app-এর template engine-এর মধ্যে reuse/consolidation
 // বিবেচনা করা যেতে পারে — কিন্তু এখনই সেই নির্ভরতা তৈরি করা হয়নি।
 
-export type ReportKind = 'boq' | 'quantity' | 'cost' | 'material' | 'bbs' | 'tender' | 'calculationSheet' | 'master'
+export type ReportKind =
+  | 'estimateBasis' // ２০২৬-０８-２০ যোগ (audit gap: narrative Estimate Basis পৃষ্ঠা নেই)
+  | 'boq'
+  | 'quantity'
+  | 'cost'
+  | 'material'
+  | 'bbs'
+  | 'tender'
+  | 'calculationSheet'
+  | 'master'
 
 export type ReportFormat = 'pdf' | 'excel' | 'word'
 

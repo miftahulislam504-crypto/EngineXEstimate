@@ -21,6 +21,10 @@ import {
   StructuralElementDimensions,
   QuantityLineItem,
   StoredQuantityTakeoff,
+  EarthworkQuantities,
+  MasonryWallSegment,
+  FinishingQuantities,
+  StairQuantities,
 } from '@/lib/types/quantity-takeoff.types'
 
 export interface QuantityImportResult {
@@ -327,4 +331,125 @@ export function summarizeFloorVolumes(floor: StructuralFloorQuantities): FloorVo
     slabVolumeM3,
     totalRccVolumeM3: footingVolumeM3 + columnVolumeM3 + beamVolumeM3 + slabVolumeM3,
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ২০২৬-০৮-২০ সম্প্রসারণ — Earthwork/Masonry/Finishing/Stair volume
+// (CivilOS-Report-Audit.md gap #2 ও #3-এর সমাধান)
+// ═══════════════════════════════════════════════════════════════
+//
+// এই ফাংশনগুলো সবসময় "থাকলে হিসাব করো, না থাকলে শূন্য/undefined
+// রিটার্ন করো" প্যাটার্ন মেনে চলে — কারণ EarthworkQuantities/
+// masonryWalls/finishing/stairDimensions সবই optional (উপরের
+// types-এর নোট দ্রষ্টব্য: পুরনো export বা এখনো Structural থেকে না
+// আসা field-এর জন্য এই auto-calc silently skip হবে, crash না করে)।
+
+export const SQFT_TO_SQM = 0.092903
+export const SQIN_TO_SQFT = 1 / 144 // ইঞ্চি-thickness × sqft area থেকে ft³ বের করতে ব্যবহৃত হয় না সরাসরি — নিচের brick volume হিসাবে thicknessIn/12 ব্যবহার করা হয়েছে, এই কনস্ট্যান্ট রাখা হলো ভবিষ্যতের sqin হিসাবের জন্য
+
+export interface EarthworkVolumeSummary {
+  excavationVolumeM3: number
+  backfillVolumeM3: number
+  disposalVolumeM3: number
+}
+
+/**
+ * excavation volume = area × depth (ft³ → m³)। backfill ও disposal
+ * volume সেই মোট excavation-এর percentage হিসেবে (EarthworkQuantities
+ * নিজেই সেই percentage বহন করে, কারণ এটা মাটির ধরন/ফাউন্ডেশন ডিজাইন
+ * অনুযায়ী প্রজেক্ট-ভেদে পাল্টায়, একটা fixed constant না)।
+ */
+export function calculateEarthworkVolumes(earthwork: EarthworkQuantities): EarthworkVolumeSummary {
+  const excavationVolumeFt3 = earthwork.excavationAreaSqft * earthwork.excavationDepthFt
+  const excavationVolumeM3 = excavationVolumeFt3 * CUBIC_FT_TO_CUBIC_M
+  const backfillVolumeM3 = excavationVolumeM3 * (earthwork.backfillPercentOfExcavation / 100)
+  const disposalVolumeM3 = excavationVolumeM3 * (earthwork.disposalPercentOfExcavation / 100)
+  return { excavationVolumeM3, backfillVolumeM3, disposalVolumeM3 }
+}
+
+/**
+ * একটা wall segment-এর brick masonry volume (m³) — gross wall area
+ * (length × height) থেকে opening deduction বাদ দিয়ে, thickness
+ * (ইঞ্চি → ফুট রূপান্তর করে) দিয়ে গুণ করে volume।
+ */
+export function calculateWallVolumeM3(wall: MasonryWallSegment): number {
+  const grossAreaSqft = wall.lengthFt * wall.heightFt
+  const netAreaSqft = Math.max(0, grossAreaSqft - wall.openingDeductionSqft)
+  const thicknessFt = wall.thicknessIn / 12
+  const volumeFt3 = netAreaSqft * thicknessFt
+  return volumeFt3 * CUBIC_FT_TO_CUBIC_M
+}
+
+export interface MasonryVolumeSummary {
+  externalWallVolumeM3: number
+  internalWallVolumeM3: number
+  parapetWallVolumeM3: number
+  totalMasonryVolumeM3: number
+}
+
+/**
+ * একটা floor-এর সব wall segment-কে wallType অনুযায়ী গ্রুপ করে volume
+ * summary — BOQ-তে "Brick Work (External)"/"Brick Work (Internal)"/
+ * "Brick Work (Parapet)" আলাদা লাইন-আইটেম হিসেবে দেখানোর জন্য (দেশীয়
+ * BOQ practice-এ প্রচলিত grouping, যেহেতু rate ভিন্ন হতে পারে)।
+ */
+export function summarizeMasonryVolumes(walls: MasonryWallSegment[]): MasonryVolumeSummary {
+  let externalWallVolumeM3 = 0
+  let internalWallVolumeM3 = 0
+  let parapetWallVolumeM3 = 0
+
+  for (const wall of walls) {
+    const volumeM3 = calculateWallVolumeM3(wall)
+    if (wall.wallType === 'external') externalWallVolumeM3 += volumeM3
+    else if (wall.wallType === 'internal') internalWallVolumeM3 += volumeM3
+    else parapetWallVolumeM3 += volumeM3
+  }
+
+  return {
+    externalWallVolumeM3,
+    internalWallVolumeM3,
+    parapetWallVolumeM3,
+    totalMasonryVolumeM3: externalWallVolumeM3 + internalWallVolumeM3 + parapetWallVolumeM3,
+  }
+}
+
+/**
+ * Finishing area-কে sqft থেকে sqm-এ রূপান্তর করে দেয় (BOQ-তে
+ * Plaster/Tiles/Paint/Ceiling সাধারণত m²-এ পরিমাপ হয়, RCC-এর মতোই
+ * m³ প্যাটার্ন অনুসরণ করে ধারাবাহিকতা রাখা হয়েছে)। কোনো নতুন হিসাব
+ * নেই এখানে, শুধু একক রূপান্তর — তাই এটা BOQ service নিজেই সরাসরি
+ * করতে পারত, কিন্তু আলাদা named function রাখা হলো যাতে unit-conversion
+ * লজিক একটাই জায়গায় থাকে (calculateElementVolumeM3-এর মতো একই নীতি)।
+ */
+export interface FinishingAreaSummarySqm {
+  internalPlasterAreaSqm: number
+  externalPlasterAreaSqm: number
+  tilesAreaSqm: number
+  paintAreaSqm: number
+  ceilingAreaSqm: number
+  waterproofingAreaSqm: number
+}
+
+export function convertFinishingToSqm(finishing: FinishingQuantities): FinishingAreaSummarySqm {
+  return {
+    internalPlasterAreaSqm: finishing.internalPlasterAreaSqft * SQFT_TO_SQM,
+    externalPlasterAreaSqm: finishing.externalPlasterAreaSqft * SQFT_TO_SQM,
+    tilesAreaSqm: finishing.tilesAreaSqft * SQFT_TO_SQM,
+    paintAreaSqm: finishing.paintAreaSqft * SQFT_TO_SQM,
+    ceilingAreaSqm: finishing.ceilingAreaSqft * SQFT_TO_SQM,
+    waterproofingAreaSqm: finishing.waterproofingAreaSqft * SQFT_TO_SQM,
+  }
+}
+
+/**
+ * Stair concrete volume — StairQuantities.waistSlabVolumeM3 সরাসরি
+ * m³-এ আসে (Structural app থেকে wire হলে সেই app-ই ft→m রূপান্তর
+ * করে পাঠাবে, structural-mapper.ts-এর নীতি অনুযায়ী), তাই এখানে আলাদা
+ * কোনো রূপান্তর নেই — শুধু undefined-safe accessor, BOQ service-এ
+ * সরাসরি `floor.stairDimensions?.waistSlabVolumeM3 ?? 0` লেখার বদলে
+ * একটা named function থাকলে ভবিষ্যতে হিসাব জটিল হলে (যেমন waist
+ * slab vs landing আলাদা করতে হলে) একটাই জায়গায় বদলানো যাবে।
+ */
+export function getStairVolumeM3(stair: StairQuantities | undefined): number {
+  return stair?.waistSlabVolumeM3 ?? 0
 }
