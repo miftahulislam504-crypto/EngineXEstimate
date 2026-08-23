@@ -34,6 +34,10 @@ export function MaterialDatabase() {
     brick: t('materialCategory_brick'),
     tiles: t('materialCategory_tiles'),
     paint: t('materialCategory_paint'),
+    door: t('materialCategory_door'),
+    window: t('materialCategory_window'),
+    electrical: t('materialCategory_electrical'),
+    plumbing: t('materialCategory_plumbing'),
     other: t('materialCategory_other'),
   }
 
@@ -46,6 +50,8 @@ export function MaterialDatabase() {
     sqft: t('materialUnit_sqft'),
     liter: t('materialUnit_liter'),
     sqm: t('materialUnit_sqm'),
+    point: t('materialUnit_point'),
+    m: t('materialUnit_m'),
   }
 
   useEffect(() => {
