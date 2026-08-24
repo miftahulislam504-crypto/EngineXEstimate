@@ -241,20 +241,35 @@ export function drawCoverPage(
   doc.line(margin, 42, pageWidth - margin, 42)
 
   // ── মূল শিরোনাম ব্লক ──
+  // titleLines-এর প্রকৃত সংখ্যা মেপে underline/subtitle/title-block
+  // সব নিচে শিফট করা হচ্ছে — আগে এগুলো ফিক্সড y (86/96/112) ধরেই
+  // বসানো হতো, ধরে নিয়ে reportTitle সবসময় এক লাইনে ধরবে। একটা লম্বা
+  // custom section title (যেমন কোনো ভবিষ্যৎ কলার দীর্ঘ নাম পাস করলে)
+  // দুই লাইনে wrap করত এবং সেই দ্বিতীয় লাইনটা সরাসরি underline/
+  // subtitle-এর ওপর দিয়ে ওভারল্যাপ করত। এখন wrapped line সংখ্যা
+  // অনুযায়ী নিচের সবকিছু ডাইনামিকভাবে সরে যায়।
   doc.setFontSize(26)
   doc.setTextColor(20, 20, 20)
   doc.setFont('helvetica', 'bold')
-  doc.text(meta.reportTitle, cx, 78, { align: 'center', maxWidth: pageWidth - margin * 2 })
+  const titleLines = doc.splitTextToSize(meta.reportTitle, pageWidth - margin * 2) as string[]
+  const titleLineHeight = 10
+  const titleTopY = 78
+  doc.text(titleLines, cx, titleTopY, { align: 'center' })
   doc.setFont('helvetica', 'normal')
+  const titleBottomY = titleTopY + (titleLines.length - 1) * titleLineHeight
 
+  const underlineY = titleBottomY + 8
   doc.setDrawColor(...PDF_BRAND_COLOR)
   doc.setLineWidth(0.8)
-  doc.line(cx - 16, 86, cx + 16, 86)
+  doc.line(cx - 16, underlineY, cx + 16, underlineY)
 
+  let afterTitleBlockY = underlineY + 26 // matches the original 112 - 86 gap when title is a single line
   if (options?.subtitle) {
+    const subtitleY = underlineY + 10
     doc.setFontSize(11)
     doc.setTextColor(...PDF_MUTED_COLOR)
-    doc.text(options.subtitle, cx, 96, { align: 'center' })
+    doc.text(options.subtitle, cx, subtitleY, { align: 'center' })
+    afterTitleBlockY = subtitleY + 16
   }
 
   // ── Title-block — MICON-স্টাইল drawing-এর "Job Title/Consultant/
@@ -272,7 +287,7 @@ export function drawCoverPage(
   const blockWidth = pageWidth - margin * 2 - 20
   const blockX = cx - blockWidth / 2
   const rowHeight = 13
-  const blockY = 112
+  const blockY = Math.max(112, afterTitleBlockY) // never above the original position, only pushed lower if the title wrapped
   const blockHeight = rows.length * rowHeight
 
   doc.setDrawColor(220, 220, 224)
@@ -330,12 +345,37 @@ export function drawCoverPage(
  * doc.setPage() দিয়ে ফিরে গিয়ে টেক্সট বসিয়ে দিতে পারে) — কিন্তু
  * সরল ব্যবহারে entries পুরোপুরি প্রি-কম্পিউটেড থাকবে বলে ধরা হয়েছে।
  */
+/**
+ * IMPORTANT constraint this function must respect: its one caller
+ * (master-report.pdf.ts) reserves EXACTLY ONE page for the Contents
+ * list up front (`doc.addPage()` then remembers that page number as
+ * `tocPageNumber`), draws every section afterward, and only then comes
+ * back with `doc.setPage(tocPageNumber)` to fill this page in — every
+ * section's recorded `sectionStartPages` number is already fixed by
+ * that point. So unlike every other overflow fix in this file, this
+ * function must NOT call doc.addPage() to handle overflow — inserting
+ * a page here would shift every already-recorded section page number
+ * out from under itself, making the Contents list point at the wrong
+ * pages throughout the rest of the document (worse than the original
+ * cut-off bug, and silently wrong rather than visibly wrong).
+ *
+ * The safe fix that respects the one-reserved-page constraint: shrink
+ * row height (and, if that's still not enough, font size) to fit
+ * however many entries there are into the one page that's actually
+ * available — same "scale down rather than overflow" approach used for
+ * EngineXDraw's sidebar. A practical project's report section count
+ * (SECTION_DEFS in master-report.pdf.ts currently lists 8) is small
+ * enough that this never needs to shrink far; the scaling exists so a
+ * future longer section list degrades gracefully instead of clipping.
+ */
 export function drawTableOfContents(
   doc: jsPDF,
   entries: { label: string; pageNumber: number }[]
 ): void {
   const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
   const margin = 20
+  const bottomMargin = 18
 
   doc.setFontSize(18)
   doc.setTextColor(20, 20, 20)
@@ -350,29 +390,40 @@ export function drawTableOfContents(
   doc.setLineWidth(0.8)
   doc.line(margin, 35, margin + 22, 35)
 
-  let y = 50
-  const rowHeight = 12
-  const chipSize = 6.5
+  const listTop = 50
+  const availableHeight = pageHeight - bottomMargin - listTop
+  const naturalRowHeight = 12
+  const naturalHeight = entries.length * naturalRowHeight
+  // Only shrink if needed, and never below 60% (past that the chip
+  // number/label become hard to read, at which point a real fix is
+  // splitting into sub-sections rather than shrinking further).
+  const scale = naturalHeight > availableHeight && naturalHeight > 0
+    ? Math.max(0.6, availableHeight / naturalHeight)
+    : 1
+  const rowHeight = naturalRowHeight * scale
+  const chipSize = 6.5 * scale
+
+  let y = listTop
 
   entries.forEach((entry, i) => {
     // হালকা alternate row shading — MICON-স্টাইল SL.No টেবিলের ধারণা,
     // কিন্তু বর্ডার-গ্রিড ছাড়া, শুধু ব্যাকগ্রাউন্ড ব্যান্ড
     if (i % 2 === 1) {
       doc.setFillColor(248, 249, 248)
-      doc.rect(margin - 4, y - 8, pageWidth - (margin - 4) * 2, rowHeight, 'F')
+      doc.rect(margin - 4, y - 8 * scale, pageWidth - (margin - 4) * 2, rowHeight, 'F')
     }
 
     // নম্বর chip — brand-color আউটলাইনড বৃত্ত, SL.No-এর মতো
     doc.setDrawColor(...PDF_BRAND_COLOR)
     doc.setLineWidth(0.4)
-    doc.circle(margin + chipSize / 2, y - 2.2, chipSize / 2, 'S')
-    doc.setFontSize(7.5)
+    doc.circle(margin + chipSize / 2, y - 2.2 * scale, chipSize / 2, 'S')
+    doc.setFontSize(Math.max(5, 7.5 * scale))
     doc.setTextColor(...PDF_BRAND_COLOR)
     doc.setFont('helvetica', 'bold')
-    doc.text(String(i + 1), margin + chipSize / 2, y - 0.3, { align: 'center' })
+    doc.text(String(i + 1), margin + chipSize / 2, y - 0.3 * scale, { align: 'center' })
 
     // লেবেল
-    doc.setFontSize(10.5)
+    doc.setFontSize(Math.max(6, 10.5 * scale))
     doc.setTextColor(30, 30, 30)
     doc.setFont('helvetica', 'normal')
     const labelX = margin + chipSize + 6
