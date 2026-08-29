@@ -97,6 +97,14 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState<ReportKind | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // checkReportsAvailability() নিজেই ব্যর্থ হলে (permission-denied,
+  // missing Firestore composite index, network ইত্যাদি) — আগে এটা
+  // silently সব বাটন "no data" দেখিয়ে দিত, যেন সত্যিই কোনো module-এ
+  // ডেটা নেই। বাস্তবে "ডেটা নেই" আর "check করাই যায়নি" সম্পূর্ণ আলাদা
+  // অবস্থা — ব্যবহারকারীর দুটোই আলাদাভাবে জানার অধিকার আছে
+  // (Dashboard-এর itemsWithoutRateAnalysis-এর একই silent-omission
+  // এড়ানো নীতি এখানেও)।
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
 
   useEffect(() => {
     refresh()
@@ -104,9 +112,13 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
 
   async function refresh() {
     setLoading(true)
+    setAvailabilityError(null)
     try {
       const result = await checkReportsAvailability(projectId)
       setAvailability(result)
+    } catch (err) {
+      setAvailability(null)
+      setAvailabilityError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
@@ -210,6 +222,19 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
           <p className="text-xs text-status-holdText">{t('reportsBengaliPdfLimitationNote')}</p>
         </div>
       </div>
+
+      {availabilityError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-start gap-2">
+          <AlertCircle size={16} className="text-red-600 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-red-600">{t('reportsAvailabilityCheckFailed')}</p>
+            <p className="text-xs text-red-500 mt-0.5 break-words">{availabilityError}</p>
+          </div>
+          <button className="btn-outline text-xs py-1 px-2 shrink-0" onClick={refresh}>
+            {t('retry')}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-center gap-2">

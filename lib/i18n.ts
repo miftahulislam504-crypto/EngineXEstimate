@@ -680,6 +680,8 @@ export const translations = {
     reportUnavailableCalculationSheet: 'Calculation Sheet বানানোর মতো ডেটা নেই — BOQ ও Rate Analysis দুটোই লাগবে।',
     reportUnavailableMaster: 'কোনো module-এই এখনো ডেটা নেই — অন্তত একটা section (BOQ, Quantity ইত্যাদি) সম্পূর্ণ করুন।',
     reportGenerationFailed: 'PDF তৈরি করতে সমস্যা হয়েছে, আবার চেষ্টা করুন।',
+    reportsAvailabilityCheckFailed:
+      'কোনো report-এর ডেটা আছে কিনা তা যাচাই করতে ব্যর্থ হয়েছে — তাই নিচের সবগুলো "নেই" দেখাচ্ছে, যদিও আসলে ডেটা না-ও মিসিং হতে পারে। নিচের আসল error message দেখুন।',
 
     // ── IntegrationHubPanel (Module 15) ─────────────────────────
     integrationHubTitle: 'Integration Hub (Module 15)',
@@ -1359,6 +1361,8 @@ export const translations = {
     reportUnavailableCalculationSheet: 'Not enough data for a Calculation Sheet — both BOQ and Rate Analysis are required.',
     reportUnavailableMaster: 'No data in any module yet — complete at least one section (BOQ, Quantity, etc.) first.',
     reportGenerationFailed: 'Something went wrong generating the PDF — please try again.',
+    reportsAvailabilityCheckFailed:
+      "Failed to check whether report data exists — that's why everything below shows unavailable, even though the data may not actually be missing. See the real error below.",
 
     // ── IntegrationHubPanel (Module 15) ─────────────────────────
     integrationHubTitle: 'Integration Hub (Module 15)',
