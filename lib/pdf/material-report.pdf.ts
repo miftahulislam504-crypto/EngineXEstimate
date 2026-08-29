@@ -21,7 +21,7 @@ import jsPDF from 'jspdf'
 import { MaterialReportContext } from '@/lib/services/reports.service'
 import { Material, MaterialCategory } from '@/lib/types/material.types'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -30,6 +30,7 @@ import {
   downloadPdf,
   buildReportFilename,
   formatTaka,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_CHART_PALETTE,
 } from '@/lib/pdf/pdf-shared'
@@ -61,7 +62,7 @@ function drawMaterialsTable(doc: jsPDF, y: number, materials: Material[]): numbe
       formatTaka(m.currentRate),
       new Date(m.lastUpdatedAt).toLocaleDateString('en-US'),
     ])
-  return drawPdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 60 } } })
+  return drawPdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 60 } }, rightMargin: sidebarRightMargin(doc) })
 }
 
 export function drawMaterialReportBody(doc: jsPDF, context: MaterialReportContext, startY: number, reportMeta: PdfReportMeta): number {
@@ -106,7 +107,7 @@ export function drawMaterialReportBody(doc: jsPDF, context: MaterialReportContex
     // যেটা overview-এর পরপরই একই পাতায় শুরু হবে যদি জায়গা থাকে)
     if (i > 0) {
       doc.addPage()
-      y = drawPdfHeader(doc, reportMeta)
+      y = drawSidebar(doc, reportMeta, { sheetNumber: `MAT-${i + 1}`, sheetTitle: `${CATEGORY_LABELS[cat] ?? cat} materials` })
     }
     y = drawSectionTitle(doc, `${CATEGORY_LABELS[cat] ?? cat} (${items.length})`, y, reportMeta)
     y = drawMaterialsTable(doc, y, items)
@@ -117,15 +118,15 @@ export function drawMaterialReportBody(doc: jsPDF, context: MaterialReportContex
 
 export function generateMaterialReportPdf(
   context: MaterialReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Material Report' }
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Material Report', reportKind: 'Material_Report' }
 
   if (context.materials.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'MAT-1', sheetTitle: reportMeta.reportTitle })
     drawMaterialReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
@@ -135,16 +136,16 @@ export function generateMaterialReportPdf(
   })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'MAT-1', sheetTitle: reportMeta.reportTitle })
   drawMaterialReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
 export function downloadMaterialReportPdf(
   context: MaterialReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): void {
   const doc = generateMaterialReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Material_Report', meta.projectName, meta.generatedAt))

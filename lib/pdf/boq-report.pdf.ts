@@ -30,7 +30,7 @@ import jsPDF from 'jspdf'
 import { BOQReportContext } from '@/lib/services/reports.service'
 import { BOQItem, BOQItemSource, BOQ_UNIT_LABELS } from '@/lib/types/boq.types'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -40,11 +40,12 @@ import {
   downloadPdf,
   buildReportFilename,
   formatQty,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_CHART_PALETTE,
 } from '@/lib/pdf/pdf-shared'
 
-function drawItemsTable(doc: jsPDF, y: number, items: BOQItem[]): number {
+function drawItemsTable(doc: jsPDF, y: number, items: BOQItem[], reportMeta: PdfReportMeta): number {
   const head = [['Item', 'Unit', 'Quantity', 'Floor']]
   const body = items.map((item) => [
     item.itemName,
@@ -57,14 +58,15 @@ function drawItemsTable(doc: jsPDF, y: number, items: BOQItem[]): number {
       0: { cellWidth: 80 },
       2: { halign: 'right' },
     },
+    rightMargin: sidebarRightMargin(doc),
   })
 }
 
 /**
  * BOQ section-এর মূল কন্টেন্ট আঁকে — caller (standalone PDF বা
- * Master Report) আগে থেকে drawPdfHeader() কল করে thisY পাস করবে
- * বলে ধরে নেওয়া হয়েছে; caller প্রয়োজনে নতুন পাতা/footer নিজে
- * সামলাবে। কোনো ডেটা না থাকলে একটা "no data" লাইন এঁকে ফিরে আসে।
+ * Master Report) আগে থেকে drawSidebar() কল করে thisY পাস করবে বলে
+ * ধরে নেওয়া হয়েছে; caller প্রয়োজনে নতুন পাতা/footer নিজে সামলাবে।
+ * কোনো ডেটা না থাকলে একটা "no data" লাইন এঁকে ফিরে আসে।
  */
 export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY: number, reportMeta: PdfReportMeta): number {
   let y = startY
@@ -108,6 +110,7 @@ export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY:
   y += 6
 
   let firstSectionDrawn = false
+  let sectionIndex = 1
   for (const group of groupedItems) {
     if (group.items.length === 0) continue
     if (firstSectionDrawn) {
@@ -116,27 +119,30 @@ export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY:
       // page-break-এর মাঝে কাটা পড়ার ঝুঁকি এড়াতে (BOQ-তে একটা
       // trade-এর row ভেঙে দুই পাতায় পড়লে পড়তে অসুবিধা হয়)
       doc.addPage()
-      y = drawPdfHeader(doc, reportMeta)
+      sectionIndex += 1
+      y = drawSidebar(doc, reportMeta, { sheetNumber: `BOQ-${sectionIndex}`, sheetTitle: group.title })
     }
     y = drawSectionTitle(doc, group.title, y, reportMeta)
-    y = drawItemsTable(doc, y, group.items)
+    y = drawItemsTable(doc, y, group.items, reportMeta)
     firstSectionDrawn = true
   }
 
   if (manualItems.length > 0) {
     if (firstSectionDrawn) {
       doc.addPage()
-      y = drawPdfHeader(doc, reportMeta)
+      sectionIndex += 1
+      y = drawSidebar(doc, reportMeta, { sheetNumber: `BOQ-${sectionIndex}`, sheetTitle: 'Manual / Custom Items' })
     }
     y = drawSectionTitle(doc, 'Manual / Custom Items', y, reportMeta)
-    y = drawItemsTable(doc, y, manualItems)
+    y = drawItemsTable(doc, y, manualItems, reportMeta)
   }
 
   // ── Version history (context.history আগে থেকেই fetch হতো, শুধু
   // builder এতদিন ব্যবহার করত না) ──
   if (context.history.length > 1) {
     doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    sectionIndex += 1
+    y = drawSidebar(doc, reportMeta, { sheetNumber: `BOQ-${sectionIndex}`, sheetTitle: 'Version History' })
     y = drawSectionTitle(doc, 'Version History', y, reportMeta)
     const historyHead = [['Version', 'Label', 'Created', 'Line Items']]
     const historyBody = context.history.map((v) => [
@@ -145,33 +151,33 @@ export function drawBOQReportBody(doc: jsPDF, context: BOQReportContext, startY:
       new Date(v.createdAt).toLocaleString('en-US'),
       String(v.items.length),
     ])
-    y = drawPdfTable(doc, y, historyHead, historyBody, { columnStyles: { 1: { cellWidth: 55 } } })
+    y = drawPdfTable(doc, y, historyHead, historyBody, { columnStyles: { 1: { cellWidth: 55 } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   return y
 }
 
-export function generateBOQReportPdf(context: BOQReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Bill of Quantities (BOQ)' }
+export function generateBOQReportPdf(context: BOQReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Bill of Quantities (BOQ)', reportKind: 'BOQ_Report' }
 
   if (!context.version || context.version.items.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'BOQ-1', sheetTitle: reportMeta.reportTitle })
     drawBOQReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
   drawCoverPage(doc, reportMeta, { subtitle: `${context.version.items.length} line items — Version ${context.version.versionId}` })
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'BOQ-1', sheetTitle: reportMeta.reportTitle })
   drawBOQReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadBOQReportPdf(context: BOQReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadBOQReportPdf(context: BOQReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateBOQReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('BOQ_Report', meta.projectName, meta.generatedAt))
 }

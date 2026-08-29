@@ -18,7 +18,7 @@
 import jsPDF from 'jspdf'
 import { CalculationSheetReportContext } from '@/lib/services/reports.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -29,6 +29,7 @@ import {
   buildReportFilename,
   formatTaka,
   formatQty,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_MUTED_COLOR,
 } from '@/lib/pdf/pdf-shared'
@@ -83,7 +84,7 @@ export function drawCalculationSheetBody(
   // থেকে শুরু (একটার calculation আরেকটার সাথে মিশে না যায়) ──
   context.items.forEach((item, index) => {
     doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    y = drawSidebar(doc, reportMeta, { sheetNumber: `CS-${index + 1}`, sheetTitle: item.boqItemName })
 
     y = drawSectionTitle(doc, `${index + 1}. ${item.boqItemName}`, y, reportMeta)
 
@@ -108,7 +109,7 @@ export function drawCalculationSheetBody(
           formatTaka(m.rate),
           formatTaka(m.lineCost),
         ]),
-        { columnStyles: { 0: { cellWidth: 70 } } }
+        { columnStyles: { 0: { cellWidth: 70 } }, rightMargin: sidebarRightMargin(doc) }
       )
     }
 
@@ -124,7 +125,7 @@ export function drawCalculationSheetBody(
           formatTaka(l.rate),
           formatTaka(l.lineCost),
         ]),
-        { columnStyles: { 0: { cellWidth: 70 } } }
+        { columnStyles: { 0: { cellWidth: 70 } }, rightMargin: sidebarRightMargin(doc) }
       )
     }
 
@@ -140,7 +141,7 @@ export function drawCalculationSheetBody(
           formatTaka(e.rate),
           formatTaka(e.lineCost),
         ]),
-        { columnStyles: { 0: { cellWidth: 70 } } }
+        { columnStyles: { 0: { cellWidth: 70 } }, rightMargin: sidebarRightMargin(doc) }
       )
     }
 
@@ -190,31 +191,31 @@ export function drawCalculationSheetBody(
 
 export function generateCalculationSheetPdf(
   context: CalculationSheetReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Detailed Calculation Sheet' }
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Detailed Calculation Sheet', reportKind: 'Calculation_Sheet' }
 
   if (context.items.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'CS-1', sheetTitle: reportMeta.reportTitle })
     drawCalculationSheetBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
   drawCoverPage(doc, reportMeta, { subtitle: `${context.items.length} BOQ items — itemwise rate build-up` })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'CS-1', sheetTitle: reportMeta.reportTitle })
   drawCalculationSheetBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
 export function downloadCalculationSheetPdf(
   context: CalculationSheetReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): void {
   const doc = generateCalculationSheetPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Calculation_Sheet', meta.projectName, meta.generatedAt))

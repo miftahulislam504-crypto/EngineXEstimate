@@ -21,7 +21,7 @@
 import jsPDF from 'jspdf'
 import { TenderReportContext } from '@/lib/services/reports.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -33,6 +33,7 @@ import {
   downloadPdf,
   buildReportFilename,
   formatTaka,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_BRAND_COLOR,
   PDF_SUCCESS_COLOR,
@@ -85,14 +86,14 @@ export function drawTenderReportBody(doc: jsPDF, context: TenderReportContext, s
       bid.contactInfo ?? '—',
       new Date(bid.submittedAt).toLocaleDateString('en-US'),
     ])
-    y = drawPdfTable(doc, y, bidHead, bidBody, { columnStyles: { 0: { cellWidth: 55 } } })
+    y = drawPdfTable(doc, y, bidHead, bidBody, { columnStyles: { 0: { cellWidth: 55 } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   if (context.comparativeStatement.length > 0) {
     // নতুন পাতা — bid table-এর পরপরই comparative statement শুরু
     // হলে page-break-এর মাঝে table কাটা পড়ার ঝুঁকি বেশি থাকে
     doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    y = drawSidebar(doc, reportMeta, { sheetNumber: 'TND-2', sheetTitle: 'Comparative Statement' })
     y = drawSectionTitle(doc, 'Comparative Statement', y, reportMeta)
     const cmpHead = [['Contractor', 'Bid Amount', 'Diff. from Estimate', 'Diff %', 'Lowest?']]
     const cmpBody = context.comparativeStatement.map((row) => [
@@ -102,7 +103,7 @@ export function drawTenderReportBody(doc: jsPDF, context: TenderReportContext, s
       `${row.differenceFromEngineerEstimate > 0 ? '+' : ''}${row.differencePercent.toFixed(1)}%`,
       row.isLowestBid ? 'Yes' : '',
     ])
-    y = drawPdfTable(doc, y, cmpHead, cmpBody, { columnStyles: { 0: { cellWidth: 55 } } })
+    y = drawPdfTable(doc, y, cmpHead, cmpBody, { columnStyles: { 0: { cellWidth: 55 } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   if (context.finalization) {
@@ -124,14 +125,14 @@ export function drawTenderReportBody(doc: jsPDF, context: TenderReportContext, s
   return y
 }
 
-export function generateTenderReportPdf(context: TenderReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Tender Report' }
+export function generateTenderReportPdf(context: TenderReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Tender Report', reportKind: 'Tender_Report' }
 
   if (!context.engineerEstimate && context.bids.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'TND-1', sheetTitle: reportMeta.reportTitle })
     drawTenderReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
@@ -141,14 +142,14 @@ export function generateTenderReportPdf(context: TenderReportContext, meta: Omit
   })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'TND-1', sheetTitle: reportMeta.reportTitle })
   drawTenderReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadTenderReportPdf(context: TenderReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadTenderReportPdf(context: TenderReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateTenderReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Tender_Report', meta.projectName, meta.generatedAt))
 }

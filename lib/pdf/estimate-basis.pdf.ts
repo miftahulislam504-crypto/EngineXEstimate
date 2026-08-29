@@ -23,7 +23,7 @@
 import jsPDF from 'jspdf'
 import { EstimateBasisContext } from '@/lib/services/reports.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawSectionTitle,
@@ -121,7 +121,7 @@ export function drawEstimateBasisBody(doc: jsPDF, context: EstimateBasisContext,
 
   // ── Measurement Rules ──
   doc.addPage()
-  y = drawPdfHeader(doc, reportMeta)
+  y = drawSidebar(doc, reportMeta, { sheetNumber: 'EB-2', sheetTitle: 'Measurement Rules & Assumptions' })
   y = drawSectionTitle(doc, 'Measurement Rules', y, reportMeta)
   MEASUREMENT_RULES.forEach((rule, i) => {
     y = drawCalloutBox(doc, [`${i + 1}. ${rule}`], y, 'info', reportMeta)
@@ -137,23 +137,23 @@ export function drawEstimateBasisBody(doc: jsPDF, context: EstimateBasisContext,
   return y
 }
 
-export function generateEstimateBasisPdf(context: EstimateBasisContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Estimate Basis' }
+export function generateEstimateBasisPdf(context: EstimateBasisContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Estimate Basis', reportKind: 'Estimate_Basis_Report' }
 
   drawCoverPage(doc, reportMeta, {
     subtitle: context.hubImport ? `${context.hubImport.projectName}` : 'Estimate Basis & Assumptions',
   })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'EB-1', sheetTitle: reportMeta.reportTitle })
   drawEstimateBasisBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadEstimateBasisPdf(context: EstimateBasisContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadEstimateBasisPdf(context: EstimateBasisContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateEstimateBasisPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Estimate_Basis', meta.projectName, meta.generatedAt))
 }

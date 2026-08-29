@@ -42,7 +42,7 @@ import { drawBBSReportBody } from '@/lib/pdf/bbs-report.pdf'
 import { drawTenderReportBody } from '@/lib/pdf/tender-report.pdf'
 import { drawCalculationSheetBody } from '@/lib/pdf/calculation-sheet.pdf'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawTableOfContents,
@@ -66,6 +66,8 @@ export interface MasterReportContext {
 interface SectionDef {
   key: keyof ReportsAvailability
   label: string
+  /** sidebar-এর REPORT TYPE ব্লকে সঠিক লেবেল বসাতে — প্রতিটা section আসলে যে standalone report-এর অংশ, তারই reportKind (PDF_REPORT_KIND_LABEL, pdf-shared.ts)। */
+  reportKind: string
 }
 
 // REPORT_KINDS-এর (ReportsPanel.tsx) একই ক্রম অনুসরণ করা হয়েছে,
@@ -75,18 +77,18 @@ interface SectionDef {
 // কারণ এই সেকশনগুলো estimateBasis-এ বর্ণিত rate/assumption-এর
 // ভিত্তিতে তৈরি)।
 const SECTION_DEFS: SectionDef[] = [
-  { key: 'estimateBasis', label: 'Estimate Basis' },
-  { key: 'boq', label: 'Bill of Quantities (BOQ)' },
-  { key: 'quantity', label: 'Quantity Report' },
-  { key: 'cost', label: 'Cost Report' },
-  { key: 'material', label: 'Material Report' },
-  { key: 'bbs', label: 'Bar Bending Schedule (BBS)' },
-  { key: 'tender', label: 'Tender Report' },
-  { key: 'calculationSheet', label: 'Detailed Calculation Sheet' },
+  { key: 'estimateBasis', label: 'Estimate Basis', reportKind: 'Estimate_Basis_Report' },
+  { key: 'boq', label: 'Bill of Quantities (BOQ)', reportKind: 'BOQ_Report' },
+  { key: 'quantity', label: 'Quantity Report', reportKind: 'Quantity_Report' },
+  { key: 'cost', label: 'Cost Report', reportKind: 'Cost_Report' },
+  { key: 'material', label: 'Material Report', reportKind: 'Material_Report' },
+  { key: 'bbs', label: 'Bar Bending Schedule (BBS)', reportKind: 'BBS_Report' },
+  { key: 'tender', label: 'Tender Report', reportKind: 'Tender_Report' },
+  { key: 'calculationSheet', label: 'Detailed Calculation Sheet', reportKind: 'Calculation_Sheet' },
 ]
 
-export function generateMasterReportPdf(context: MasterReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const reportMeta = { ...meta, reportTitle: 'Full Project Report' }
+export function generateMasterReportPdf(context: MasterReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Full Project Report', reportKind: 'Master_Report' }
   const availableSections = SECTION_DEFS.filter((s) => context.availability[s.key])
 
   const doc = new jsPDF()
@@ -94,12 +96,12 @@ export function generateMasterReportPdf(context: MasterReportContext, meta: Omit
   if (availableSections.length === 0) {
     drawCoverPage(doc, reportMeta, { subtitle: 'No data available yet in any module' })
     doc.addPage()
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'MST-1', sheetTitle: reportMeta.reportTitle })
     doc.setFontSize(10)
     doc.text('No report sections have data yet — complete at least one module (BOQ, Quantity Takeoff, etc.) first.', 14, y, {
       maxWidth: doc.internal.pageSize.getWidth() - 28,
     })
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
@@ -121,42 +123,57 @@ export function generateMasterReportPdf(context: MasterReportContext, meta: Omit
 
   const sectionStartPages: Record<string, number> = {}
 
-  availableSections.forEach((section) => {
+  availableSections.forEach((section, index) => {
     // প্রতিটা section-এর orientation স্পষ্টভাবে বলে দেওয়া হচ্ছে —
     // jsPDF-এ doc.addPage() argument ছাড়া কল করলে আগের পাতার
     // orientation inherit করে, portrait-এ auto-reset হয় না। তাই
     // BBS (landscape) section-এর ঠিক পরের section ভুলভাবে landscape
     // হয়ে যাওয়া এড়াতে প্রতিটা addPage()-এ explicit 'a4'+orientation
     // দেওয়া হচ্ছে, কোনো implicit inheritance-এর উপর নির্ভর না করে।
+    //
+    // ── Sidebar landscape guard (2026-08-26) ──────────────────────
+    // drawSidebar()-এর ২০-ব্লক sidebar A4 landscape-এ পুরো height
+    // জুড়ে বসতে পারে না (ReportPage.tsx-এর guard-এর একই কারণ,
+    // EngineX-Structural-এ verified) — কিন্তু এখানে BBS section
+    // ইচ্ছাকৃতভাবে landscape (column-ভারী table)। তাই BBS section-এর
+    // জন্য 'a4' এর বদলে বড় page size ('a3') ব্যবহার করা হচ্ছে
+    // landscape-এ যথেষ্ট height রাখতে — standalone bbs-report.pdf.ts
+    // অবশ্য এখনো নিজে A4 landscape-ই ব্যবহার করে (এই একই ঝুঁকি সেখানেও
+    // আছে, কিন্তু সেটা এই sidebar-unification কাজের একটা আলাদা,
+    // পরবর্তী ফলো-আপ হিসেবে নোট করা হলো — bbs-report.pdf.ts-এর
+    // নিজস্ব A4 landscape+sidebar কম্বিনেশন এখনো render-verify করা
+    // হয়নি, শুধু typecheck হয়েছে)।
     const orientation = section.key === 'bbs' ? 'landscape' : 'portrait'
-    doc.addPage('a4', orientation)
+    const pageSize = section.key === 'bbs' ? 'a3' : 'a4'
+    doc.addPage(pageSize, orientation)
     sectionStartPages[section.key] = doc.getNumberOfPages()
-    const y = drawPdfHeader(doc, { ...reportMeta, reportTitle: section.label })
+    const sectionMeta: PdfReportMeta = { ...reportMeta, reportTitle: section.label, reportKind: section.reportKind }
+    const y = drawSidebar(doc, sectionMeta, { sheetNumber: `MST-${index + 1}`, sheetTitle: section.label })
 
     switch (section.key) {
       case 'estimateBasis':
-        drawEstimateBasisBody(doc, context.estimateBasis, y, { ...reportMeta, reportTitle: section.label })
+        drawEstimateBasisBody(doc, context.estimateBasis, y, sectionMeta)
         break
       case 'boq':
-        drawBOQReportBody(doc, context.boq, y, { ...reportMeta, reportTitle: section.label })
+        drawBOQReportBody(doc, context.boq, y, sectionMeta)
         break
       case 'quantity':
-        drawQuantityReportBody(doc, context.quantity, y, { ...reportMeta, reportTitle: section.label })
+        drawQuantityReportBody(doc, context.quantity, y, sectionMeta)
         break
       case 'cost':
-        drawCostReportBody(doc, context.cost, y, { ...reportMeta, reportTitle: section.label })
+        drawCostReportBody(doc, context.cost, y, sectionMeta)
         break
       case 'material':
-        drawMaterialReportBody(doc, context.material, y, { ...reportMeta, reportTitle: section.label })
+        drawMaterialReportBody(doc, context.material, y, sectionMeta)
         break
       case 'bbs':
-        drawBBSReportBody(doc, context.bbs, y, { ...reportMeta, reportTitle: section.label })
+        drawBBSReportBody(doc, context.bbs, y, sectionMeta)
         break
       case 'tender':
-        drawTenderReportBody(doc, context.tender, y, { ...reportMeta, reportTitle: section.label })
+        drawTenderReportBody(doc, context.tender, y, sectionMeta)
         break
       case 'calculationSheet':
-        drawCalculationSheetBody(doc, context.calculationSheet, y, { ...reportMeta, reportTitle: section.label })
+        drawCalculationSheetBody(doc, context.calculationSheet, y, sectionMeta)
         break
     }
   })
@@ -168,11 +185,11 @@ export function generateMasterReportPdf(context: MasterReportContext, meta: Omit
     availableSections.map((s) => ({ label: s.label, pageNumber: sectionStartPages[s.key] }))
   )
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadMasterReportPdf(context: MasterReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadMasterReportPdf(context: MasterReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateMasterReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Full_Project_Report', meta.projectName, meta.generatedAt))
 }

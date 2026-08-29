@@ -83,6 +83,19 @@ export interface PdfReportMeta {
   // ভেঙে না যায় — না থাকলে cover page-এর title-block row-টা বাদ পড়ে।
   clientName?: string
   location?: string
+  // ── Unified sheet-design sidebar (2026-08-26) ────────────────────
+  // Project.status আছে (project.types.ts), কিন্তু কোনো বর্তমান caller
+  // (ReportsPanel.tsx) এখনো এই মান pass করে না — pass করতে হলে
+  // ReportsPanel-এর প্রপস-চেইন প্যারেন্ট পেজ পর্যন্ত থ্রেড করা লাগবে,
+  // যেটা এই sidebar-unification কাজের সুযোগের বাইরে। তাই ঐচ্ছিক
+  // রাখা হলো — না থাকলে STATUS ব্লকে honest "—" দেখাবে, invented
+  // মান বসানো হবে না।
+  status?: string
+  // ── Sidebar sheet-numbering (2026-08-26) ─────────────────────────
+  // buildReportFilename()-এর সাথে ব্যবহৃত reportKind-এর মতোই মান
+  // (যেমন "BOQ_Report") — drawSidebar()-এর REPORT TYPE লেবেল এবং
+  // continuation-page sheet-numbering (ensureSpace) দুটোতেই লাগে।
+  reportKind: string
 }
 
 /**
@@ -132,41 +145,231 @@ export function drawLogoMark(doc: jsPDF, x: number, y: number, size: number): vo
 }
 
 /**
- * প্রতিটা report PDF-এর প্রথম পাতার উপরে বসানো standard header —
- * app name (vector logo mark সহ), report title, project name/code,
- * generated-at timestamp।
- * Returns the Y position where the caller should start drawing body content.
+ * প্রতিটা report PDF-এর প্রতিটা পাতায় ডান পাশে বসানো MICON-স্টাইল
+ * vertical sidebar (SHEET-DESIGN-SPEC.md অনুযায়ী, EngineXDraw/
+ * EngineX-Structural-এর মতোই ~35% page width, ২০-ব্লক সিকোয়েন্স)।
+ *
+ * ── ল্যান্ডস্কেপে রূপান্তর (2026-08-26) ──────────────────────────
+ * এই app-এর রিপোর্টগুলো মূলত লম্বা multi-column টেবিল (BOQ, Cost,
+ * Quantity) — portrait A4-তে ডানে ৩৫% sidebar বসালে টেবিল-কলাম
+ * অসম্ভব সংকীর্ণ হয়ে যেত। তাই সব রিপোর্ট এখন landscape A4-এ
+ * (generateXxxReportPdf() গুলোতে `new jsPDF({ orientation:
+ * 'landscape' })`), যেখানে sidebar আর table content-column দুটোই
+ * আরামে বসে। drawPdfTable()-এর margin.right sidebar width-এর সাথে
+ * মিলিয়ে বাড়ানো হয়েছে (নিচে দেখুন) যাতে টেবিল sidebar-এর নিচে গিয়ে
+ * না ঢোকে।
+ *
+ * ── আগের drawPdfHeader() থেকে পার্থক্য ───────────────────────────
+ * আগে প্রতিটা পাতার উপরে একটা horizontal strip header ছিল (logo +
+ * title + project line + generated-at, তারপর একটা brand-color
+ * underline)। এখন সেটার বদলে পুরো পাতা-height জুড়ে ডান পাশে একটা
+ * bordered vertical strip — MICON রেফারেন্সের ঠিক যে কাঠামো
+ * EngineXDraw/EngineX-Structural-এ implement হয়েছে। প্রতিটা page-এ
+ * পুনরায় আঁকতে হয় (jsPDF-এ react-pdf-এর `fixed` prop-এর সমতুল্য কিছু
+ * নেই), তাই caller-রা প্রতিটা doc.addPage()-এর পরে drawSidebar() আবার
+ * কল করবে — ঠিক আগে drawPdfHeader() যেভাবে কল হতো।
+ *
+ * Returns the X position where the caller's body content should end
+ * (i.e. the left edge of the sidebar) — callers use this as the
+ * right-margin boundary for text/table width calculations instead of
+ * assuming the full page width is available.
  */
-export function drawPdfHeader(doc: jsPDF, meta: PdfReportMeta): number {
-  const pageWidth = doc.internal.pageSize.getWidth()
+const SIDEBAR_WIDTH_PERCENT = 0.35 // spec section 1 — same ratio as EngineXDraw/EngineX-Structural
 
-  drawLogoMark(doc, 14, 8, 9)
+const PDF_REPORT_KIND_LABEL: Record<string, string> = {
+  BOQ_Report: 'BOQ REPORT',
+  Quantity_Report: 'QUANTITY REPORT',
+  Cost_Report: 'COST REPORT',
+  Material_Report: 'MATERIAL REPORT',
+  BBS_Report: 'BBS REPORT',
+  Calculation_Sheet: 'CALCULATION SHEET',
+  Tender_Report: 'TENDER REPORT',
+  Estimate_Basis_Report: 'ESTIMATE BASIS REPORT',
+  Master_Report: 'MASTER REPORT',
+}
 
-  doc.setFontSize(9)
+export interface SidebarOptions {
+  /** যেমন "S-01", "CS-03" — EngineXDraw/EngineX-Structural-এর SHEET NO কনভেনশনের সাথে মিলিয়ে; এই app-এ কোনো পূর্ব-বিদ্যমান sheet-numbering না থাকায় নতুন করে বানানো, প্রতিটা caller নিজের রিপোর্ট-কোড ঠিক করে দেয়। */
+  sheetNumber: string
+  /** এই নির্দিষ্ট পাতা/সেকশনের শিরোনাম — একাধিক পাতার রিপোর্টে ভিন্ন হতে পারে (যেমন Master Report-এ প্রতিটা section আলাদা)। */
+  sheetTitle: string
+}
+
+function sidebarBoxLabelValue(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  width: number,
+  label: string,
+  value: string,
+  options?: { valueFontSize?: number; bold?: boolean; minHeight?: number }
+): number {
+  const valueFontSize = options?.valueFontSize ?? 9
+  const bold = options?.bold ?? false
+  const padX = 3
+  const padTop = 4.5
+  const labelHeight = 3.2
+  const gap = 1
+
+  doc.setFontSize(6)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  doc.text('EngineX Quanta', 26, 13)
+  doc.setFont('helvetica', 'normal')
+  doc.text(label, x + padX, y + padTop)
 
-  doc.setFontSize(16)
+  doc.setFontSize(valueFontSize)
   doc.setTextColor(20, 20, 20)
-  doc.setFont('helvetica', 'bold')
-  doc.text(meta.reportTitle, 14, 25)
+  doc.setFont('helvetica', bold ? 'bold' : 'normal')
+  const valueLines = doc.splitTextToSize(value || '—', width - padX * 2) as string[]
+  const cappedLines = valueLines.slice(0, 2) // spec-এর maxHeight:2-line cap-এর jsPDF সমতুল্য — খুব লম্বা মান sidebar থেকে উপচে পড়া ঠেকাতে
+  const lineHeight = valueFontSize * 0.42
+  cappedLines.forEach((line, i) => {
+    doc.text(line, x + padX, y + padTop + labelHeight + gap + i * lineHeight)
+  })
   doc.setFont('helvetica', 'normal')
 
-  doc.setFontSize(10)
-  doc.setTextColor(60, 60, 60)
-  const projectLine = meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName
-  doc.text(projectLine, 14, 32)
+  const contentHeight = padTop + labelHeight + gap + cappedLines.length * lineHeight + 2.5
+  const blockHeight = Math.max(contentHeight, options?.minHeight ?? 0)
 
-  doc.setFontSize(8)
+  doc.setDrawColor(60, 60, 60)
+  doc.setLineWidth(0.15)
+  doc.line(x, y + blockHeight, x + width, y + blockHeight)
+
+  return y + blockHeight
+}
+
+/**
+ * Full-height vertical sidebar — spec-এর ২০-ব্লক সিকোয়েন্স অনুসরণ
+ * করে (company header → drawing/report type → status → job no →
+ * project/client/location → revision table → title → date → sheet no
+ * → sign-off ব্লক → copyright)। Building Name/No. বাদ (EngineXEstimate-এর
+ * Project টাইপে কোনো building concept নেই — verified against
+ * project.types.ts, SHEET-DESIGN-SPEC.md section 4.3 দেখুন), Scale
+ * ব্লক বাদ (কোনো spatial drawing না, সব রিপোর্ট/টেবিল)।
+ *
+ * Returns the Y-coordinate where the caller should start drawing body
+ * content (top margin + a small gap) — NOT the sidebar's X-position.
+ * Callers don't need the sidebar's X themselves: drawSectionTitle/
+ * drawStatCards/drawCalloutBox/drawPdfTable (via sidebarRightMargin())
+ * all compute the content area's right boundary internally.
+ */
+export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOptions): number {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 8
+  const sidebarWidth = pageWidth * SIDEBAR_WIDTH_PERCENT
+  const x = pageWidth - margin - sidebarWidth
+  const topY = margin
+
+  doc.setDrawColor(20, 20, 20)
+  doc.setLineWidth(0.3)
+  doc.rect(x, topY, sidebarWidth, pageHeight - margin * 2, 'S')
+
+  let y = topY
+
+  // Block 1 — Company header (logo mark + app name)
+  const logoSize = 8
+  drawLogoMark(doc, x + 3, y + 3, logoSize)
+  doc.setFontSize(9)
+  doc.setTextColor(20, 20, 20)
+  doc.setFont('helvetica', 'bold')
+  doc.text('EngineX Quanta', x + logoSize + 6, y + 6.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(6)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  const generatedLabel = `Generated: ${new Date(meta.generatedAt).toLocaleString('en-US')}`
-  doc.text(generatedLabel, pageWidth - 14, 12, { align: 'right' })
+  doc.text('Construction Estimating & Cost Management', x + logoSize + 6, y + 10.5, { maxWidth: sidebarWidth - logoSize - 9 })
+  const companyBlockHeight = logoSize + 6
+  doc.setDrawColor(60, 60, 60)
+  doc.setLineWidth(0.15)
+  doc.line(x, y + companyBlockHeight, x + sidebarWidth, y + companyBlockHeight)
+  y += companyBlockHeight
 
-  doc.setDrawColor(...PDF_BRAND_COLOR)
-  doc.setLineWidth(0.6)
-  doc.line(14, 36, pageWidth - 14, 36)
+  // Block 2 — Report Type (this app produces reports, not drawings — spec section 4.3)
+  const reportTypeValue = PDF_REPORT_KIND_LABEL[meta.reportKind] ?? meta.reportKind.replace(/_/g, ' ').toUpperCase()
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TYPE :', reportTypeValue, { valueFontSize: 11, bold: true, minHeight: 12 })
 
-  return 43
+  // Block 3 — Status
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'STATUS :', meta.status ?? '—')
+
+  // Block 4 — Job No. (this app has no separate job-number concept from projectCode — reusing it here rather than inventing a new field)
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'JOB NO :', meta.projectCode ?? '—')
+
+  // Block 5 — Project Name
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'PROJECT NAME :', meta.projectName)
+
+  // Blocks 6/7 — Building Name/No. omitted — verified no Building concept in this app's Project type (SHEET-DESIGN-SPEC.md section 4.3)
+
+  // Block 8 — Client
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'CLIENT :', meta.clientName ?? '—', { valueFontSize: 10, bold: true })
+
+  // Block 9 — Location
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'LOCATION :', meta.location ?? '—')
+
+  // Block 10 — Revision table (this app has no revision-history concept yet — single always-current row, matching the reference sheet's own blank-rows-under-header shape)
+  doc.setFontSize(6)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  doc.text('REVISION', x + 3, y + 4.5)
+  const revColWidths = [sidebarWidth * 0.34, sidebarWidth * 0.33, sidebarWidth * 0.33]
+  const revHeaderY = y + 6.5
+  doc.setDrawColor(60, 60, 60)
+  doc.setLineWidth(0.15)
+  doc.line(x, revHeaderY, x + sidebarWidth, revHeaderY)
+  doc.setFontSize(5.5)
+  doc.setFont('helvetica', 'bold')
+  doc.text('REV.', x + 1.5, revHeaderY + 3.2)
+  doc.text('SIGNATURE', x + revColWidths[0] + 1.5, revHeaderY + 3.2)
+  doc.text('DATE', x + revColWidths[0] + revColWidths[1] + 1.5, revHeaderY + 3.2)
+  doc.setFont('helvetica', 'normal')
+  doc.line(x + revColWidths[0], y, x + revColWidths[0], revHeaderY + 10)
+  doc.line(x + revColWidths[0] + revColWidths[1], y, x + revColWidths[0] + revColWidths[1], revHeaderY + 10)
+  doc.setFontSize(7.5)
+  doc.setTextColor(20, 20, 20)
+  doc.text('0', x + 1.5, revHeaderY + 8)
+  doc.text(new Date(meta.generatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), x + revColWidths[0] + revColWidths[1] + 1.5, revHeaderY + 8)
+  y = revHeaderY + 10
+  doc.line(x, y, x + sidebarWidth, y)
+
+  // Block 11 — Report Title (this sheet/section's own title, not the report-kind label from block 2)
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TITLE :', options.sheetTitle, { valueFontSize: 11, bold: true, minHeight: 12 })
+
+  // Block 12 — Option: omitted, this app has no design-option/variant concept (spec allows omitting rather than showing empty "—")
+
+  // Block 13 — Date
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'DATE :', new Date(meta.generatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }))
+
+  // Block 14 — Scale: omitted, no spatial drawing (spec section 4.3)
+
+  // Block 15 — Sheet No.
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'SHEET NO :', options.sheetNumber, { valueFontSize: 14, bold: true, minHeight: 13 })
+
+  // Blocks 16-19 — Detail/Design/Checked/Approved By: this app has no sign-off/engineer-of-record data model at all — omitted rather than showing four empty "—" rows with no real field to eventually fill in (unlike EngineX-Structural, which has these blocks feeding from real optional props). Revisiting this if/when this app gains that concept.
+
+  // Block 20 — Copyright notice
+  doc.setFontSize(6)
+  doc.setTextColor(...PDF_MUTED_COLOR)
+  const copyrightLines = [
+    'Auto-generated report — EngineX Quanta.',
+    'For internal estimating use; verify figures before',
+    'tender submission.',
+  ]
+  let copyY = y + 4
+  copyrightLines.forEach((line) => {
+    doc.text(line, x + 3, copyY, { maxWidth: sidebarWidth - 6 })
+    copyY += 3.2
+  })
+
+  // ⚠️ FIXED (2026-08-26): এই ফাংশন আগে `x` (sidebar-এর বাম প্রান্তের
+  // X-coordinate) রিটার্ন করত, কিন্তু প্রতিটা caller ফাইলে
+  // `const y = drawSidebar(...)` লিখে সেটাকে content-শুরুর Y-position
+  // হিসেবে ব্যবহার করা হয়েছিল — landscape A4-এ sidebar-এর X (~180mm)
+  // page height-এর (~210mm) কাছাকাছি হওয়ায় drawSectionTitle-এর
+  // ensureSpace() সাথে সাথেই "পাতায় জায়গা নেই" ধরে নতুন (খালি) পাতা
+  // যোগ করে দিত — render+rasterize করে ধরা পড়েছে (BOQ report-এর
+  // পাতা ২ সম্পূর্ণ খালি ছিল, content পাতা ৩-এ চলে গিয়েছিল)। এখন
+  // content-শুরুর Y রিটার্ন করা হচ্ছে (topY-এর ঠিক নিচে, margin
+  // বাদে) — sidebar-এর X caller-দের আর দরকার নেই, কারণ
+  // drawSectionTitle/drawStatCards/ইত্যাদি নিজেরাই contentRightBound()
+  // দিয়ে sidebar-এর জায়গা হিসাব করে নেয়।
+  return topY + 2
 }
 
 /**
@@ -175,20 +378,26 @@ export function drawPdfHeader(doc: jsPDF, meta: PdfReportMeta): number {
  * নির্দিষ্ট রেঞ্জ থেকে ফুটার বসানো যায় (যেমন cover page-এর পরের
  * পাতাগুলোতে, cover page নিজে বাদ দিয়ে)।
  */
-export function drawPdfFooter(doc: jsPDF, options?: { startPage?: number }): void {
+/**
+ * প্রতিটা পাতার নিচে page-number/attribution লাইন। sidebar-যুক্ত
+ * পাতায় (reportMeta দেওয়া থাকলে) এই লাইন sidebar-এর বাম প্রান্ত
+ * পর্যন্তই টানা হয় — sidebar-এর বর্ডার বক্সের ভেতর দিয়ে চলে গিয়ে
+ * সেটাকে দৃশ্যত ভাঙা দেখানো এড়াতে।
+ */
+export function drawPdfFooter(doc: jsPDF, options?: { startPage?: number; reportMeta?: PdfReportMeta }): void {
   const pageCount = doc.getNumberOfPages()
-  const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
   const startPage = options?.startPage ?? 1
+  const rightBound = contentRightBound(doc, !!options?.reportMeta)
 
   for (let i = startPage; i <= pageCount; i++) {
     doc.setPage(i)
     doc.setDrawColor(225, 225, 225)
     doc.setLineWidth(0.2)
-    doc.line(14, pageHeight - 13, pageWidth - 14, pageHeight - 13)
+    doc.line(14, pageHeight - 13, rightBound, pageHeight - 13)
     doc.setFontSize(8)
     doc.setTextColor(...PDF_MUTED_COLOR)
-    doc.text(`Page ${i} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: 'right' })
+    doc.text(`Page ${i} of ${pageCount}`, rightBound, pageHeight - 8, { align: 'right' })
     doc.text('EngineX Quanta — Auto-generated report', 14, pageHeight - 8)
   }
 }
@@ -203,10 +412,16 @@ export function drawPdfFooter(doc: jsPDF, options?: { startPage?: number }): voi
  * ধরে নেওয়া হয়েছে — তাই এই ফাংশন pageCount বা Y-position রিটার্ন
  * করে না।
  *
- * ব্যবহার ঐচ্ছিক: ছোট/simple রিপোর্টে (single-table) শুধু
- * drawPdfHeader ব্যবহার চালিয়ে যাওয়া যায়; cover page মূলত multi-
- * section রিপোর্ট (Cost, Tender, Master Report) ও দৃশ্যমান
- * professional presentation-এর জন্য।
+ * ইচ্ছাকৃতভাবে sidebar নেই এই পাতায় (SHEET-DESIGN-SPEC.md section 5,
+ * EngineX-Structural-এর SectionA_Cover.tsx-এর একই সিদ্ধান্তের সাথে
+ * সঙ্গতিপূর্ণ) — MICON রেফারেন্স সেটেও Content Sheet-এর আগে একটা
+ * full-page, sidebar-ছাড়া cover থাকে। drawSidebar() যুক্ত body
+ * পাতাগুলো এই cover-এর পরে doc.addPage() দিয়ে শুরু হয়।
+ *
+ * ব্যবহার ঐচ্ছিক: ছোট/simple রিপোর্টে (single-table) শুধু প্রথম body
+ * পাতায় সরাসরি drawSidebar() ব্যবহার চালিয়ে যাওয়া যায়; cover page
+ * মূলত multi-section রিপোর্ট (Cost, Tender, Master Report) ও
+ * দৃশ্যমান professional presentation-এর জন্য।
  */
 export function drawCoverPage(
   doc: jsPDF,
@@ -453,13 +668,19 @@ export function drawTableOfContents(
  * autoTable-এর জন্য common styling — head brand color, alternate
  * row shading, ছোট font (BOQ/BBS-এর মতো column-ভারী table-এ
  * readability-র জন্য জরুরি)।
+ *
+ * rightMargin ঐচ্ছিক (ডিফল্ট 14mm, আগের আচরণ অপরিবর্তিত) — sidebar
+ * থাকা পাতায় caller sidebar-এর প্রস্থ + একটু gap pass করে টেবিলকে
+ * sidebar-এর নিচে ঢুকে যাওয়া থেকে আটকায় (দেখুন drawSidebar-এর
+ * রিটার্ন ভ্যালু, যেটা সরাসরি এখানে rightMargin হিসেবে derive করা
+ * যায়: pageWidth - sidebarLeftX)।
  */
 export function drawPdfTable(
   doc: jsPDF,
   startY: number,
   head: string[][],
   body: RowInput[],
-  options?: { columnStyles?: Record<number, { halign?: 'left' | 'center' | 'right'; cellWidth?: number }> }
+  options?: { columnStyles?: Record<number, { halign?: 'left' | 'center' | 'right'; cellWidth?: number }>; rightMargin?: number }
 ): number {
   autoTable(doc, {
     startY,
@@ -469,7 +690,7 @@ export function drawPdfTable(
     headStyles: { fillColor: PDF_BRAND_COLOR, textColor: 255, fontSize: 9, fontStyle: 'bold' },
     bodyStyles: { fontSize: 8.5, textColor: 30 },
     alternateRowStyles: { fillColor: [245, 247, 245] },
-    margin: { left: 14, right: 14 },
+    margin: { left: 14, right: options?.rightMargin ?? 14 },
     columnStyles: options?.columnStyles,
   })
   // jspdf-autotable প্লাগইন doc-এ lastAutoTable attach করে (টাইপ
@@ -487,10 +708,19 @@ export function drawPdfTable(
 
 /**
  * পাতার নিচের দিকে যথেষ্ট জায়গা আছে কিনা যাচাই করে — না থাকলে নতুন
- * পাতা যোগ করে (reportMeta দেওয়া থাকলে drawPdfHeader() দিয়ে সেই
- * নতুন পাতায় হেডারও বসায়) এবং content শুরুর নতুন Y রিটার্ন করে।
+ * পাতা যোগ করে (reportMeta দেওয়া থাকলে drawSidebar() দিয়ে সেই নতুন
+ * পাতায় sidebar-ও বসায়) এবং content শুরুর নতুন Y রিটার্ন করে।
  * reportMeta না দিলে (ঐচ্ছিক, backward-compat কারণে) শুধু raw
- * doc.addPage() করে, কোনো header ছাড়া।
+ * doc.addPage() করে, কোনো sidebar ছাড়া।
+ *
+ * নতুন পাতার sheetNumber/sheetTitle নির্দিষ্ট section-context ছাড়াই
+ * derive করা হয় (page-count-ভিত্তিক কোড + reportTitle) — একটা
+ * continuation page-এর জন্য যথেষ্ট প্রাসঙ্গিক, প্রতিটা caller
+ * (drawSectionTitle ইত্যাদির মাধ্যমে) নিজে থেকে sheet-context থ্রেড
+ * করতে বাধ্য করা এড়াতে। কলার যদি নিজে থেকে বেশি নির্দিষ্ট sheetTitle
+ * চায় (যেমন Master Report-এর section-aware continuation), সরাসরি
+ * drawSidebar() কল করে নিজের options দিতে পারে — ensureSpace শুধু
+ * ডিফল্ট আচরণ কভার করে।
  *
  * ── Phase 6 (Polish) ────────────────────────────────────────────
  * jspdf-autotable নিজে থেকেই table-এর page-break handle করে (row
@@ -507,9 +737,40 @@ function ensureSpace(doc: jsPDF, y: number, neededHeight: number, reportMeta?: P
   const bottomMargin = 18 // drawPdfFooter()-এর জায়গা রাখার জন্য
   if (y + neededHeight > pageHeight - bottomMargin) {
     doc.addPage()
-    return reportMeta ? drawPdfHeader(doc, reportMeta) : 20
+    if (!reportMeta) return 20
+    const pageNum = doc.getNumberOfPages()
+    return drawSidebar(doc, reportMeta, {
+      sheetNumber: `${reportKindPrefix(reportMeta.reportKind)}-${pageNum}`,
+      sheetTitle: reportMeta.reportTitle,
+    })
   }
   return y
+}
+
+/** reportKind (যেমন "BOQ_Report") থেকে একটা ছোট sheet-number prefix বের করে (যেমন "BOQ") — প্রথম শব্দাংশ নেওয়া, বাকি "_Report" ইত্যাদি বাদ। */
+function reportKindPrefix(reportKind: string): string {
+  const firstSegment = reportKind.split('_')[0]
+  return firstSegment.toUpperCase()
+}
+
+/** sidebar থাকলে effective content-area-এর ডান সীমা — sidebar-এর বাম প্রান্ত (একটু gap সহ), না থাকলে স্বাভাবিক page margin। Absolute X-coordinate রিটার্ন করে। */
+function contentRightBound(doc: jsPDF, hasSidebar: boolean): number {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  if (!hasSidebar) return pageWidth - 14
+  return pageWidth - 8 - pageWidth * SIDEBAR_WIDTH_PERCENT - 6
+}
+
+/**
+ * drawPdfTable()-এর rightMargin অপশনের জন্য — jspdf-autotable-এর
+ * margin.right সবসময় "page-এর ডান প্রান্ত থেকে দূরত্ব" হিসেবে কাজ
+ * করে (contentRightBound()-এর মতো absolute X-coordinate না), তাই এই
+ * wrapper সেই conversion করে দেয়। সব caller ফাইল এই একটাই ফাংশন
+ * ব্যবহার করবে sidebar-যুক্ত পাতায় টেবিলের জন্য rightMargin ঠিক
+ * রাখতে — pageWidth/sidebar-width গণনা প্রতিটা caller নিজে না করে।
+ */
+export function sidebarRightMargin(doc: jsPDF): number {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  return pageWidth - contentRightBound(doc, true)
 }
 
 export function drawSectionTitle(doc: jsPDF, title: string, y: number, reportMeta?: PdfReportMeta): number {
@@ -520,7 +781,7 @@ export function drawSectionTitle(doc: jsPDF, title: string, y: number, reportMet
   doc.setFontSize(11)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(20, 20, 20)
-  doc.text(title, 18, y)
+  doc.text(title, 18, y, { maxWidth: contentRightBound(doc, !!reportMeta) - 18 })
   doc.setFont('helvetica', 'normal')
   return y + 6
 }
@@ -536,7 +797,7 @@ export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: num
   doc.text(label, 14, y)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(20, 20, 20)
-  doc.text(value, 90, y)
+  doc.text(value, 90, y, { maxWidth: contentRightBound(doc, !!reportMeta) - 90 })
   doc.setFont('helvetica', 'normal')
   return y + 6
 }
@@ -555,10 +816,9 @@ export function drawStatCards(
 ): number {
   const boxHeight = 22
   y = ensureSpace(doc, y, boxHeight, reportMeta)
-  const pageWidth = doc.internal.pageSize.getWidth()
   const margin = 14
   const gap = 4
-  const totalWidth = pageWidth - margin * 2
+  const totalWidth = contentRightBound(doc, !!reportMeta) - margin
   const boxWidth = (totalWidth - gap * (boxes.length - 1)) / boxes.length
 
   boxes.forEach((box, i) => {
@@ -607,8 +867,7 @@ export function drawCalloutBox(
     success: { border: [187, 247, 208], bg: [240, 253, 244], text: PDF_SUCCESS_COLOR },
   }
   const c = palette[variant]
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const boxWidth = pageWidth - 28
+  const boxWidth = contentRightBound(doc, !!reportMeta) - 14
   const lineHeight = 4.6
   const padding = 4
   const boxHeight = padding * 2 + lines.length * lineHeight

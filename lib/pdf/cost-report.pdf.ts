@@ -29,7 +29,7 @@ import jsPDF from 'jspdf'
 import { CostReportContext } from '@/lib/services/reports.service'
 import { toCostBreakdownChartData } from '@/lib/services/dashboard.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -43,6 +43,7 @@ import {
   buildReportFilename,
   formatTaka,
   formatQty,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_CHART_PALETTE,
 } from '@/lib/pdf/pdf-shared'
@@ -129,7 +130,7 @@ export function drawCostReportBody(doc: jsPDF, context: CostReportContext, start
     y = drawSectionTitle(doc, 'Trade-wise Cost Breakdown', y, reportMeta)
     const tradeHead = [['Trade', 'Line Items', 'Total Cost']]
     const tradeBody = context.tradeCosts.map((slice) => [slice.label, String(slice.itemCount), formatTaka(slice.totalCost)])
-    y = drawPdfTable(doc, y, tradeHead, tradeBody, { columnStyles: { 2: { halign: 'right' } } })
+    y = drawPdfTable(doc, y, tradeHead, tradeBody, { columnStyles: { 2: { halign: 'right' } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   // ２０২৬-０৮-２０ যোগ — Floor-wise cost breakdown টেবিল।
@@ -141,41 +142,41 @@ export function drawCostReportBody(doc: jsPDF, context: CostReportContext, start
       String(slice.itemCount),
       formatTaka(slice.totalCost),
     ])
-    y = drawPdfTable(doc, y, floorHead, floorBody, { columnStyles: { 2: { halign: 'right' } } })
+    y = drawPdfTable(doc, y, floorHead, floorBody, { columnStyles: { 2: { halign: 'right' } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   doc.addPage()
-  y = drawPdfHeader(doc, reportMeta)
+  y = drawSidebar(doc, reportMeta, { sheetNumber: 'COST-2', sheetTitle: 'BOQ Item Costs' })
   y = drawSectionTitle(doc, 'BOQ Item Costs', y, reportMeta)
   const head = [['Item', 'Unit', 'Quantity']]
   const body = context.boqItems.map((item) => [item.itemName, item.unit, formatQty(item.quantity, 3)])
-  y = drawPdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 100 } } })
+  y = drawPdfTable(doc, y, head, body, { columnStyles: { 0: { cellWidth: 100 } }, rightMargin: sidebarRightMargin(doc) })
 
   return y
 }
 
-export function generateCostReportPdf(context: CostReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Cost Report' }
+export function generateCostReportPdf(context: CostReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Cost Report', reportKind: 'Cost_Report' }
 
   if (!context.summary || context.boqItems.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'COST-1', sheetTitle: reportMeta.reportTitle })
     drawCostReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
   drawCoverPage(doc, reportMeta, { subtitle: `${context.boqItems.length} BOQ items costed` })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'COST-1', sheetTitle: reportMeta.reportTitle })
   drawCostReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadCostReportPdf(context: CostReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadCostReportPdf(context: CostReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateCostReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Cost_Report', meta.projectName, meta.generatedAt))
 }

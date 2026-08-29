@@ -32,7 +32,7 @@ import jsPDF from 'jspdf'
 import { BBSReportContext } from '@/lib/services/reports.service'
 import { calculateBBSRows, summarizeBBSByDiameter, summarizeBBSByMember } from '@/lib/services/reinforcement.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -44,6 +44,7 @@ import {
   downloadPdf,
   buildReportFilename,
   formatQty,
+  sidebarRightMargin,
   PdfReportMeta,
 } from '@/lib/pdf/pdf-shared'
 
@@ -118,11 +119,12 @@ export function drawBBSReportBody(doc: jsPDF, context: BBSReportContext, startY:
       .map((m) => [MEMBER_LABELS[m] ?? m, formatQty(byMember[m])])
     y = drawPdfTable(doc, y, memberHead, memberBody, {
       columnStyles: { 0: { cellWidth: 40 }, 1: { halign: 'right' } },
+      rightMargin: sidebarRightMargin(doc),
     })
   }
 
   doc.addPage('a4', 'landscape')
-  y = drawPdfHeader(doc, reportMeta)
+  y = drawSidebar(doc, reportMeta, { sheetNumber: 'BBS-2', sheetTitle: 'Bar Bending Schedule' })
   y = drawSectionTitle(doc, 'Bar Bending Schedule', y, reportMeta)
 
   const head = [
@@ -141,13 +143,13 @@ export function drawBBSReportBody(doc: jsPDF, context: BBSReportContext, startY:
     formatQty(row.totalWeightKg),
   ])
 
-  y = drawPdfTable(doc, y, head, body, { columnStyles: { 9: { halign: 'right' } } })
+  y = drawPdfTable(doc, y, head, body, { columnStyles: { 9: { halign: 'right' } }, rightMargin: sidebarRightMargin(doc) })
 
   if (diameters.length > 0) {
     y = drawSectionTitle(doc, 'Weight Breakdown by Diameter', y, reportMeta)
     const diaHead = [['Diameter (mm)', 'Total Weight (kg)']]
     const diaBody = diameters.map((d) => [`${d}mm`, formatQty(byDiameter[d])])
-    y = drawPdfTable(doc, y, diaHead, diaBody, { columnStyles: { 0: { cellWidth: 40 } } })
+    y = drawPdfTable(doc, y, diaHead, diaBody, { columnStyles: { 0: { cellWidth: 40 } }, rightMargin: sidebarRightMargin(doc) })
   }
 
   if (warnings.length > 0) {
@@ -157,14 +159,14 @@ export function drawBBSReportBody(doc: jsPDF, context: BBSReportContext, startY:
   return y
 }
 
-export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): jsPDF {
+export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): jsPDF {
   const doc = new jsPDF({ orientation: 'landscape' })
-  const reportMeta = { ...meta, reportTitle: 'Bar Bending Schedule (BBS)' }
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Bar Bending Schedule (BBS)', reportKind: 'BBS_Report' }
 
   if (context.rows.length === 0) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'BBS-1', sheetTitle: reportMeta.reportTitle })
     drawBBSReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
@@ -174,14 +176,14 @@ export function generateBBSReportPdf(context: BBSReportContext, meta: Omit<PdfRe
   })
 
   doc.addPage('a4', 'landscape')
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'BBS-1', sheetTitle: reportMeta.reportTitle })
   drawBBSReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
-export function downloadBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle'>): void {
+export function downloadBBSReportPdf(context: BBSReportContext, meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>): void {
   const doc = generateBBSReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('BBS_Report', meta.projectName, meta.generatedAt))
 }

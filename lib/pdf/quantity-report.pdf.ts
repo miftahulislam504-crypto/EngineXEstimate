@@ -26,7 +26,7 @@ import {
   getStairVolumeM3,
 } from '@/lib/services/quantity-takeoff.service'
 import {
-  drawPdfHeader,
+  drawSidebar,
   drawPdfFooter,
   drawCoverPage,
   drawPdfTable,
@@ -37,6 +37,7 @@ import {
   downloadPdf,
   buildReportFilename,
   formatQty,
+  sidebarRightMargin,
   PdfReportMeta,
   PDF_CHART_PALETTE,
 } from '@/lib/pdf/pdf-shared'
@@ -104,7 +105,7 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
 
   if (context.takeoff.architecturalFloors.length > 0) {
     doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    y = drawSidebar(doc, reportMeta, { sheetNumber: 'QTY-2', sheetTitle: 'Architectural Quantities' })
     y = drawSectionTitle(doc, 'Architectural Quantities (per floor)', y, reportMeta)
     const archHead = [['Floor', 'Wall Length (ft)', 'Wall Area (sqft)', 'Floor Area (sqft)', 'Ceiling Area (sqft)', 'Paint Area (sqft)', 'Doors', 'Windows']]
     const archBody = archFloors.map((q) => [
@@ -117,7 +118,7 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
       String(q.doorQuantity),
       String(q.windowQuantity),
     ])
-    y = drawPdfTable(doc, y, archHead, archBody)
+    y = drawPdfTable(doc, y, archHead, archBody, { rightMargin: sidebarRightMargin(doc) })
 
     // ২০২৬-০৮-২০ যোগ — Masonry ও Finishing আলাদা টেবিল হিসেবে, কারণ
     // মূল archHead টেবিল ইতিমধ্যেই ৮ কলাম চওড়া — আরও ৬-৮ কলাম যোগ
@@ -132,7 +133,7 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
       })
     if (masonryRows.length > 0) {
       y = drawSectionTitle(doc, 'Masonry Volume (per floor)', y, reportMeta)
-      y = drawPdfTable(doc, y, [['Floor', 'External (m³)', 'Internal (m³)', 'Parapet (m³)', 'Total (m³)']], masonryRows)
+      y = drawPdfTable(doc, y, [['Floor', 'External (m³)', 'Internal (m³)', 'Parapet (m³)', 'Total (m³)']], masonryRows, { rightMargin: sidebarRightMargin(doc) })
     }
 
     const finishingRows = archFloors
@@ -151,13 +152,13 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
       })
     if (finishingRows.length > 0) {
       y = drawSectionTitle(doc, 'Finishing Area (per floor, m²)', y, reportMeta)
-      y = drawPdfTable(doc, y, [['Floor', 'Plaster (Int)', 'Plaster (Ext)', 'Tiles', 'Paint', 'Ceiling', 'Waterproof']], finishingRows)
+      y = drawPdfTable(doc, y, [['Floor', 'Plaster (Int)', 'Plaster (Ext)', 'Tiles', 'Paint', 'Ceiling', 'Waterproof']], finishingRows, { rightMargin: sidebarRightMargin(doc) })
     }
   }
 
   if (context.takeoff.structuralFloors.length > 0) {
     doc.addPage()
-    y = drawPdfHeader(doc, reportMeta)
+    y = drawSidebar(doc, reportMeta, { sheetNumber: 'QTY-3', sheetTitle: 'Structural Quantities' })
     y = drawSectionTitle(doc, 'Structural Quantities (per floor, calculated volume)', y, reportMeta)
     // ২০২৬-০৮-২০ যোগ — Stair Volume (m³) কলাম, RCC volume-এর পাশে।
     // এটা totalRccVolumeM3-এ ধরা নেই (boq.service.ts-এ আলাদা "RCC
@@ -174,7 +175,7 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
       String(q.stairQuantity),
       formatQty(q.reinforcementQuantityKg),
     ])
-    y = drawPdfTable(doc, y, structHead, structBody)
+    y = drawPdfTable(doc, y, structHead, structBody, { rightMargin: sidebarRightMargin(doc) })
 
     // ২০২৬-০৮-২০ যোগ — Earthwork আলাদা টেবিল, শুধু যেসব floor-এ
     // earthwork ডেটা আছে (সাধারণত শুধু ground floor)।
@@ -186,7 +187,7 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
       })
     if (earthworkRows.length > 0) {
       y = drawSectionTitle(doc, 'Earthwork Volume (per floor)', y, reportMeta)
-      y = drawPdfTable(doc, y, [['Floor', 'Excavation (m³)', 'Backfill (m³)', 'Disposal (m³)']], earthworkRows)
+      y = drawPdfTable(doc, y, [['Floor', 'Excavation (m³)', 'Backfill (m³)', 'Disposal (m³)']], earthworkRows, { rightMargin: sidebarRightMargin(doc) })
     }
   }
 
@@ -195,15 +196,15 @@ export function drawQuantityReportBody(doc: jsPDF, context: QuantityReportContex
 
 export function generateQuantityReportPdf(
   context: QuantityReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): jsPDF {
-  const doc = new jsPDF()
-  const reportMeta = { ...meta, reportTitle: 'Quantity Report' }
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const reportMeta: PdfReportMeta = { ...meta, reportTitle: 'Quantity Report', reportKind: 'Quantity_Report' }
 
   if (!context.takeoff || (context.takeoff.architecturalFloors.length === 0 && context.takeoff.structuralFloors.length === 0)) {
-    const y = drawPdfHeader(doc, reportMeta)
+    const y = drawSidebar(doc, reportMeta, { sheetNumber: 'QTY-1', sheetTitle: reportMeta.reportTitle })
     drawQuantityReportBody(doc, context, y, reportMeta)
-    drawPdfFooter(doc)
+    drawPdfFooter(doc, { reportMeta })
     return doc
   }
 
@@ -213,16 +214,16 @@ export function generateQuantityReportPdf(
   drawCoverPage(doc, reportMeta, { subtitle: `${floorCount} floor${floorCount === 1 ? '' : 's'} covered` })
 
   doc.addPage()
-  const y = drawPdfHeader(doc, reportMeta)
+  const y = drawSidebar(doc, reportMeta, { sheetNumber: 'QTY-1', sheetTitle: reportMeta.reportTitle })
   drawQuantityReportBody(doc, context, y, reportMeta)
 
-  drawPdfFooter(doc, { startPage: 2 })
+  drawPdfFooter(doc, { startPage: 2, reportMeta })
   return doc
 }
 
 export function downloadQuantityReportPdf(
   context: QuantityReportContext,
-  meta: Omit<PdfReportMeta, 'reportTitle'>
+  meta: Omit<PdfReportMeta, 'reportTitle' | 'reportKind'>
 ): void {
   const doc = generateQuantityReportPdf(context, meta)
   downloadPdf(doc, buildReportFilename('Quantity_Report', meta.projectName, meta.generatedAt))
