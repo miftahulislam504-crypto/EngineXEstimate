@@ -34,19 +34,28 @@ import {
   PdfReportMeta,
 } from '@/lib/pdf/pdf-shared'
 
+// এই দুই array ইচ্ছাকৃতভাবে ইংরেজিতে — bn UI-তেও, কারণ pdf-shared.ts
+// জুড়ে doc.setFont('helvetica', ...) ব্যবহৃত হয়, যেটা built-in
+// jsPDF ফন্ট এবং শুধু Latin/ASCII glyph সাপোর্ট করে। এখানে আগে
+// বাংলা টেক্সট ছিল, যা garbled bytes হয়ে রেন্ডার হচ্ছিল (দেখুন
+// PDF-এর নিজস্ব "Known limitation" ব্যানার — pdf-shared.ts-এর সেই
+// ব্যানার-টেক্সটই একমাত্র জায়গা যেখানে বাংলা রাখা নিরাপদ, কারণ
+// সেটা PDF-এ না, শুধু ওয়েব UI-তে রেন্ডার হয়)। Bengali Unicode font
+// (যেমন Noto Sans Bengali) doc.addFont() দিয়ে embed করার পরই এই
+// দুই array বাংলায় ফেরানো উচিত — তার আগে না।
 const MEASUREMENT_RULES = [
-  'কংক্রিট (RCC/PCC) — নেট volume (m³), formwork-এর জন্য আলাদা কোনো deduction করা হয় না।',
-  'Brick Work — gross wall area থেকে door/window opening (0.1 m² এর বেশি) deduct করে, thickness অনুযায়ী volume (m³)।',
-  'Plaster/Paint/Tiles — সারফেস area (m²), opening deduct করা থাকলে তা Masonry-এর মতোই wall segment-level এ ধরা।',
-  'Reinforcement — kg এককে, cutting length × unit weight × (1 + wastage%), BBS (Module 7) অনুযায়ী।',
-  'Earthwork — excavation volume থেকে backfill/disposal percentage-ভিত্তিক ভাগ (নেট measurement)।',
+  'Concrete (RCC/PCC) — net volume (m³); no separate deduction is made for formwork.',
+  'Brick Work — gross wall area minus door/window openings (over 0.1 m²), volume (m³) by thickness.',
+  'Plaster/Paint/Tiles — surface area (m²); openings are deducted at the same wall-segment level as Masonry.',
+  'Reinforcement — in kg, cutting length × unit weight × (1 + wastage%), as per BBS (Module 7).',
+  'Earthwork — excavation volume split by backfill/disposal percentage (net measurement).',
 ]
 
 const ASSUMPTIONS = [
-  'সব rate 1st-party (নিজস্ব) survey/procurement অনুযায়ী — কোনো সরকারি Schedule of Rates (SOR) সরাসরি reference করা হয়নি, যদি না Material/Rate entry-র নোটে উল্লেখ থাকে।',
-  'Overhead ও Profit percentage Project Settings (Hub)-এ নির্ধারিত মান অনুযায়ী, প্রতিটা BOQ item-এর rate-এ সমানভাবে প্রযোজ্য।',
-  'VAT/Tax আলাদা reporting-এ দেখানো হয় (Cost Report-এর বাইরে), Total Project Cost-এ pre-tax মান দেখানো হয়েছে।',
-  'যেসব BOQ item-এর Rate Analysis এখনো সম্পূর্ণ হয়নি, সেগুলোর cost এই estimate-এ শূন্য ধরা হয়েছে (Cost Report-এ আলাদাভাবে চিহ্নিত)।',
+  'All rates are 1st-party (own) survey/procurement based — no government Schedule of Rates (SOR) is directly referenced unless noted in the Material/Rate entry.',
+  'Overhead and Profit percentages are as set in Project Settings (Hub), applied uniformly to every BOQ item rate.',
+  'VAT/Tax is shown separately (outside the Cost Report) — the Total Project Cost shown is the pre-tax value.',
+  'For BOQ items whose Rate Analysis is not yet complete, cost is taken as zero in this estimate (flagged separately in the Cost Report).',
 ]
 
 export function drawEstimateBasisBody(doc: jsPDF, context: EstimateBasisContext, startY: number, reportMeta: PdfReportMeta): number {
