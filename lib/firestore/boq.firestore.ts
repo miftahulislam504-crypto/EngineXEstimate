@@ -1,13 +1,24 @@
 // lib/firestore/boq.firestore.ts
 //
 // পাথ:
-//   projects/{projectId}/estimatingInput/boqVersions/{versionId}  ← প্রতিটা BOQ version স্থায়ীভাবে সংরক্ষিত
-//   projects/{projectId}/estimatingInput/activeBoqVersion          ← pointer
+//   projects/{projectId}/estimatingInput/root/boqVersions/{versionId}  ← প্রতিটা BOQ version স্থায়ীভাবে সংরক্ষিত
+//   projects/{projectId}/estimatingInput/activeBoqVersion               ← pointer
 //
 // Original doc-এ "BOQ Versioning" ও "BOQ History" আলাদা করে চাওয়া
 // হয়েছিল — hub-import.firestore.ts ও quantity-takeoff.firestore.ts-এর
 // একই versioned-subcollection + active-pointer প্যাটার্ন এখানেও
 // অনুসরণ করা হয়েছে, ecosystem জুড়ে consistency-র জন্য।
+//
+// ⚠️ বাগফিক্স: আগে boqVersions সরাসরি projects/{projectId}/
+// estimatingInput/boqVersions -এ লেখা হতো (৪ segment — Firestore
+// SDK "Invalid collection reference: ... must have an odd number of
+// segments" throw করত)। hub-import.firestore.ts-এ ঠিক একই bug আগে
+// ধরা পড়ে ঠিক হয়েছিল (সেই ফাইলের নিজস্ব bugfix-কমেন্ট দ্রষ্টব্য) —
+// এখানে একই ফিক্স প্রয়োগ করা হলো: boqVersions subcollection-কে
+// estimatingInput-এর একটা fixed document ('root') এর নিচে রাখা,
+// যাতে activeBoqVersion pointer-এর path (আগে থেকেই বৈধ, ৪ segment)
+// অপরিবর্তিত থেকে যায়, শুধু boqVersions-এর অবস্থান ঠিক হয় (এখন ৫
+// segment collection(), ৬ segment doc() — দুটোই বৈধ)।
 
 import { doc, getDoc, setDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -15,6 +26,7 @@ import { BOQItem, BOQVersion } from '@/lib/types/boq.types'
 import { emitEvent } from '@/lib/integration/hub-sdk-client'
 
 const PARENT_COLLECTION = 'estimatingInput'
+const VERSIONS_PARENT_DOC = 'root' // boqVersions subcollection এই fixed doc-এর নিচে — bugfix note উপরে দ্রষ্টব্য
 const VERSIONS_SUBCOLLECTION = 'boqVersions'
 const ACTIVE_POINTER_DOC = 'activeBoqVersion'
 
@@ -47,7 +59,7 @@ export async function saveBOQVersion(
     ...(options?.label ? { label: options.label } : {}),
   }
 
-  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_SUBCOLLECTION, versionId)
+  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_PARENT_DOC, VERSIONS_SUBCOLLECTION, versionId)
   const pointerRef = doc(db, 'projects', projectId, PARENT_COLLECTION, ACTIVE_POINTER_DOC)
 
   await setDoc(versionRef, version)
@@ -71,7 +83,7 @@ export async function getActiveBOQVersion(projectId: string): Promise<BOQVersion
   if (!pointerSnap.exists()) return null
 
   const { versionId } = pointerSnap.data() as ActiveVersionPointer
-  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_SUBCOLLECTION, versionId)
+  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_PARENT_DOC, VERSIONS_SUBCOLLECTION, versionId)
   const versionSnap = await getDoc(versionRef)
   if (!versionSnap.exists()) return null
 
@@ -79,14 +91,14 @@ export async function getActiveBOQVersion(projectId: string): Promise<BOQVersion
 }
 
 export async function getBOQVersionHistory(projectId: string, maxResults = 20): Promise<BOQVersion[]> {
-  const versionsRef = collection(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_SUBCOLLECTION)
+  const versionsRef = collection(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_PARENT_DOC, VERSIONS_SUBCOLLECTION)
   const q = query(versionsRef, orderBy('createdAt', 'desc'), limit(maxResults))
   const snap = await getDocs(q)
   return snap.docs.map((d) => d.data() as BOQVersion)
 }
 
 export async function getBOQVersionById(projectId: string, versionId: string): Promise<BOQVersion | null> {
-  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_SUBCOLLECTION, versionId)
+  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_PARENT_DOC, VERSIONS_SUBCOLLECTION, versionId)
   const snap = await getDoc(versionRef)
   if (!snap.exists()) return null
   return snap.data() as BOQVersion
@@ -125,7 +137,7 @@ export async function updateActiveBOQItems(projectId: string, items: BOQItem[]):
   }
 
   const { versionId } = pointerSnap.data() as ActiveVersionPointer
-  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_SUBCOLLECTION, versionId)
+  const versionRef = doc(db, 'projects', projectId, PARENT_COLLECTION, VERSIONS_PARENT_DOC, VERSIONS_SUBCOLLECTION, versionId)
   const snap = await getDoc(versionRef)
   if (!snap.exists()) throw new Error(`BOQ version "${versionId}" পাওয়া যায়নি।`)
 
