@@ -194,8 +194,22 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
           break
         }
       }
-    } catch {
-      setError(t('reportGenerationFailed'))
+    } catch (err) {
+      // আগে এখানে error object ধরাই হতো না (bare `catch {}`) — শুধু
+      // জেনেরিক reportGenerationFailed মেসেজ দেখানো হতো, আসল কারণ
+      // কোথাও visible থাকত না। এখন সবসময় পুরো error + stack browser
+      // console-এ log হয় (Chrome-এ address bar-এ chrome://inspect
+      // বা desktop DevTools ছাড়াই অন্তত remote-debug tool দিয়ে দেখা
+      // যায়), আর URL-এ ?debug=1 থাকলে সেই raw টেক্সট UI-তেও দেখানো
+      // হয় — স্বাভাবিক ব্যবহারকারীর জন্য না, শুধু ডিবাগ করার সময়।
+      console.error('[Reports] PDF generation failed:', err)
+      const isDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1'
+      if (isDebug) {
+        const detail = err instanceof Error ? `${err.message}\n\n${err.stack ?? ''}` : String(err)
+        setError(`[DEBUG] ${detail}`)
+      } else {
+        setError(t('reportGenerationFailed'))
+      }
     } finally {
       setGenerating(null)
     }
@@ -237,9 +251,9 @@ export function ReportsPanel({ projectId, projectName, projectCode, clientName, 
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-center gap-2">
-          <AlertCircle size={16} className="text-red-600 shrink-0" />
-          <p className="text-sm text-red-600">{error}</p>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-start gap-2">
+          <AlertCircle size={16} className="text-red-600 mt-0.5 shrink-0" />
+          <p className="text-sm text-red-600 whitespace-pre-wrap break-words min-w-0">{error}</p>
         </div>
       )}
 

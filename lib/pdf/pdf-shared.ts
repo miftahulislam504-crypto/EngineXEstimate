@@ -483,7 +483,7 @@ export function drawCoverPage(
     const subtitleY = underlineY + 10
     doc.setFontSize(11)
     doc.setTextColor(...PDF_MUTED_COLOR)
-    doc.text(options.subtitle, cx, subtitleY, { align: 'center' })
+    doc.text(stripUnrenderableBengali(options.subtitle), cx, subtitleY, { align: 'center' })
     afterTitleBlockY = subtitleY + 16
   }
 
@@ -492,11 +492,19 @@ export function drawCoverPage(
   // হালকা-বর্ডার rounded box-এ label-uppercase + value দুই-কলাম গ্রিড।
   // clientName/location না থাকলে (Hub import-ভিত্তিক পুরনো caller)
   // সেই row বাদ পড়ে — খালি "—" দেখানো হয় না।
+  //
+  // projectName/clientName/location — এই তিনটেই Hub app-এ ইউজার
+  // যা টাইপ করেছে তার raw pass-through (EngineXEstimate-এর কোনো
+  // hard-coded টেক্সট না) — buildingType-এর মতোই বাংলা থাকতে পারে,
+  // তাই একই sanitizer এখানেও।
   const rows: { label: string; value: string }[] = [
-    { label: 'PROJECT', value: meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName },
+    {
+      label: 'PROJECT',
+      value: stripUnrenderableBengali(meta.projectCode ? `${meta.projectName} (${meta.projectCode})` : meta.projectName),
+    },
   ]
-  if (meta.clientName) rows.push({ label: 'CLIENT', value: meta.clientName })
-  if (meta.location) rows.push({ label: 'LOCATION', value: meta.location })
+  if (meta.clientName) rows.push({ label: 'CLIENT', value: stripUnrenderableBengali(meta.clientName) })
+  if (meta.location) rows.push({ label: 'LOCATION', value: stripUnrenderableBengali(meta.location) })
   rows.push({ label: 'GENERATED', value: new Date(meta.generatedAt).toLocaleString('en-US') })
 
   const blockWidth = pageWidth - margin * 2 - 20
@@ -675,6 +683,23 @@ export function drawTableOfContents(
  * রিটার্ন ভ্যালু, যেটা সরাসরি এখানে rightMargin হিসেবে derive করা
  * যায়: pageWidth - sidebarLeftX)।
  */
+/** table cell-এর মান string/number/অন্য কিছু হতে পারে (RowInput-এর টাইপ অনুযায়ী) — শুধু string cell-এই Bengali স্ট্রিপ করা দরকার, বাকিগুলো অপরিবর্তিত। */
+function sanitizeTableCell(cell: unknown): unknown {
+  return typeof cell === 'string' ? stripUnrenderableBengali(cell) : cell
+}
+
+/** RowInput array-form (CellInput[]) অথবা object-form ({ [col]: CellInput }) দুটোই হতে পারে — দুই shape-ই টাইপ বজায় রেখে handle করা, sanitizeTableCell-এর রিটার্ন unknown হওয়ায় সরাসরি .map() করলে RowInput ইউনিয়ন ভেঙে যায়। */
+function sanitizeTableRow(row: RowInput): RowInput {
+  if (Array.isArray(row)) {
+    return row.map(sanitizeTableCell) as RowInput
+  }
+  const safeRow: Record<string, unknown> = {}
+  for (const key of Object.keys(row)) {
+    safeRow[key] = sanitizeTableCell((row as Record<string, unknown>)[key])
+  }
+  return safeRow as RowInput
+}
+
 export function drawPdfTable(
   doc: jsPDF,
   startY: number,
@@ -682,10 +707,17 @@ export function drawPdfTable(
   body: RowInput[],
   options?: { columnStyles?: Record<number, { halign?: 'left' | 'center' | 'right'; cellWidth?: number }>; rightMargin?: number }
 ): number {
+  // BOQ/Quantity/Material ইত্যাদি row-এ item name/description ইউজার
+  // বাংলায় লিখতে পারে (UI বাংলায় চলে) — drawSummaryLine-এর মতো এখানেও
+  // helvetica-তে garbled bytes এড়াতে প্রতিটা string cell sanitize করা
+  // হচ্ছে। head-এ সাধারণত এটা লাগে না (কলাম-হেডার সব ইংরেজি), কিন্তু
+  // ভবিষ্যতে কোনো bilingual header এলেও নিরাপদ থাকতে একই ট্রিটমেন্ট।
+  const safeHead = head.map((row) => row.map((cell) => stripUnrenderableBengali(cell)))
+  const safeBody = body.map(sanitizeTableRow)
   autoTable(doc, {
     startY,
-    head,
-    body,
+    head: safeHead,
+    body: safeBody,
     theme: 'striped',
     headStyles: { fillColor: PDF_BRAND_COLOR, textColor: 255, fontSize: 9, fontStyle: 'bold' },
     bodyStyles: { fontSize: 8.5, textColor: 30 },
@@ -790,6 +822,22 @@ export function drawSectionTitle(doc: jsPDF, title: string, y: number, reportMet
  * একটা key-value সারাংশ লাইন (যেমন "Total Project Cost: ৳12,34,500")
  * — table-এর বাইরে বড় summary number দেখানোর জন্য।
  */
+// Hub app থেকে sync হওয়া কিছু field (যেমন buildingType, usageType)
+// ইউজার Hub-এ বাংলায় লিখে/সিলেক্ট করে থাকতে পারে — সেই raw স্ট্রিং
+// এখানে সরাসরি pass হয়ে আসে, PDF জেনারেটর কোডে hard-code করা কোনো
+// টেক্সট না (তুলনা করুন lib/pdf/estimate-basis.pdf.ts-এর
+// MEASUREMENT_RULES/ASSUMPTIONS-এর সাথে, যেগুলো এই ফাইলেরই
+// hard-coded ছিল এবং সরাসরি ইংরেজি করে ফিক্স করা হয়েছে — Hub-sync
+// ডেটার জন্য সেই পথ কাজ করে না, কারণ মান আসে database থেকে,
+// কোডে না)। শুধু Bengali script রেঞ্জ (\u0980–\u09FF) স্ট্রিপ করা
+// হচ্ছে — m², m³, ×-এর মতো Latin-1 supplement চিহ্ন অক্ষত থাকা
+// দরকার, সেগুলো helvetica-তে ঠিকভাবেই render হয়।
+function stripUnrenderableBengali(value: string): string {
+  if (!/[\u0980-\u09FF]/.test(value)) return value
+  const cleaned = value.replace(/[\u0980-\u09FF]+/g, '').replace(/\s{2,}/g, ' ').replace(/[()\s]+$/, '').trim()
+  return cleaned || '(Bengali text — not shown; PDF font has no Bengali glyphs)'
+}
+
 export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: number, reportMeta?: PdfReportMeta): number {
   y = ensureSpace(doc, y, 8, reportMeta)
   doc.setFontSize(10)
@@ -797,7 +845,7 @@ export function drawSummaryLine(doc: jsPDF, label: string, value: string, y: num
   doc.text(label, 14, y)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(20, 20, 20)
-  doc.text(value, 90, y, { maxWidth: contentRightBound(doc, !!reportMeta) - 90 })
+  doc.text(stripUnrenderableBengali(value), 90, y, { maxWidth: contentRightBound(doc, !!reportMeta) - 90 })
   doc.setFont('helvetica', 'normal')
   return y + 6
 }
@@ -883,7 +931,7 @@ export function drawCalloutBox(
   doc.setTextColor(...c.text)
   let lineY = y + padding + 3.2
   lines.forEach((line) => {
-    doc.text(line, 18, lineY, { maxWidth: boxWidth - 8 })
+    doc.text(stripUnrenderableBengali(line), 18, lineY, { maxWidth: boxWidth - 8 })
     lineY += lineHeight
   })
 
