@@ -174,7 +174,21 @@ export function drawLogoMark(doc: jsPDF, x: number, y: number, size: number): vo
  * right-margin boundary for text/table width calculations instead of
  * assuming the full page width is available.
  */
-const SIDEBAR_WIDTH_PERCENT = 0.35 // spec section 1 — same ratio as EngineXDraw/EngineX-Structural
+// ── Sidebar width fix (2026-09-03) ────────────────────────────────
+// আগে এটা 0.35 ছিল ("spec section 1 — same ratio as EngineXDraw/
+// EngineX-Structural" ধরে নিয়ে), কিন্তু আসল MICON-স্টাইল reference
+// sheet (A101 architectural drawing, landscape A3) মেপে দেখা গেছে
+// sidebar আসলে page width-এর মাত্র ~16-18% (measured: title-block
+// left edge ~980.8pt / page width ~1190.6pt = 17.6%; বর্ডার-বক্স
+// বাদ দিয়ে block content ~15.7%)। 0.35 সেই অনুপাতের দ্বিগুণেরও বেশি
+// ছিল — landscape A4-এ (297mm) এর মানে ~104mm sidebar, যা table
+// content area-কে অস্বাভাবিকভাবে সংকুচিত করছিল। এখন 0.18 (A4-এ
+// ~53mm) — reference-এর সাথে সঙ্গতিপূর্ণ এবং content area-র জন্য
+// অনেক বেশি জায়গা ছেড়ে দেয়। contentRightBound()/sidebarRightMargin()
+// দুটোই এই constant থেকে derive করে, তাই সব caller (table/section
+// title/stat card/callout, ৮টা report type জুড়ে) স্বয়ংক্রিয়ভাবে
+// বাড়তি width পায় — কোনো per-file পরিবর্তন লাগে না।
+const SIDEBAR_WIDTH_PERCENT = 0.18
 
 const PDF_REPORT_KIND_LABEL: Record<string, string> = {
   BOQ_Report: 'BOQ REPORT',
@@ -195,6 +209,31 @@ export interface SidebarOptions {
   sheetTitle: string
 }
 
+/**
+ * sidebarBoxLabelValue()-এর block height ঠিক যেভাবে হিসাব করে, সেই
+ * একই ফর্মুলা এখানে বের করে আনা হলো — যাতে drawSidebar()-এর budget
+ * pre-pass (নিচে দেখুন) আর draw-pass দুটোই একই সংখ্যা ব্যবহার করে।
+ * আগে এই দুটো আলাদা জায়গায় প্রায়-মিলে-যাওয়া দুইটা ফর্মুলা ছিল
+ * (একটা এখানে, একটা drawSidebar()-এর অনুমানে) — সেই দুই ফর্মুলা
+ * বাস্তবে মেলেনি (measured actual y প্রায় ৪৩mm বেশি ছিল অনুমানের
+ * চেয়ে), ফলে budget check ভুল সিদ্ধান্ত নিচ্ছিল এবং copyright তবু
+ * clip হচ্ছিল। এখন single source of truth — draw ফাংশন নিজেই এই
+ * হেল্পার কল করে, estimate-ও তাই করে, দুটো কখনো out-of-sync হতে
+ * পারবে না।
+ */
+function sidebarBlockHeight(doc: jsPDF, width: number, value: string, valueFontSize: number, minHeight?: number): number {
+  const padX = 3
+  const padTop = 4
+  const labelHeight = 3
+  const gap = 0.8
+  doc.setFontSize(valueFontSize)
+  const valueLines = doc.splitTextToSize(value || '—', width - padX * 2) as string[]
+  const cappedLines = Math.min(valueLines.length, 2)
+  const lineHeight = valueFontSize * 0.42
+  const contentHeight = padTop + labelHeight + gap + cappedLines * lineHeight + 2
+  return Math.max(contentHeight, minHeight ?? 0)
+}
+
 function sidebarBoxLabelValue(
   doc: jsPDF,
   x: number,
@@ -202,14 +241,36 @@ function sidebarBoxLabelValue(
   width: number,
   label: string,
   value: string,
-  options?: { valueFontSize?: number; bold?: boolean; minHeight?: number }
+  options?: { valueFontSize?: number; bold?: boolean; minHeight?: number; compact?: boolean }
 ): number {
   const valueFontSize = options?.valueFontSize ?? 9
   const bold = options?.bold ?? false
+  // ── compact mode (2026-09-03) ── sign-off রো (Detail/Design/
+  // Checked/Approved By)-এর জন্য: এগুলো প্রায় সবসময়ই খালি "—" থাকবে
+  // (blank পর্যন্ত future manual sign-off-এর জন্য), তাই পূর্ণ
+  // label+value দুই-স্তরের block-এর বদলে label ও value পাশাপাশি এক
+  // লাইনে বসিয়ে একটা পাতলা strip — reference sheet-এর নিচের সারির
+  // ছোট title-block রো-গুলোর মতোই। normal ব্লকের প্রায় অর্ধেক height।
+  if (options?.compact) {
+    const padX = 3
+    const rowH = 4.6
+    doc.setFontSize(5.5)
+    doc.setTextColor(...PDF_MUTED_COLOR)
+    doc.setFont('helvetica', 'normal')
+    doc.text(label, x + padX, y + rowH / 2 + 1.1)
+    doc.setFontSize(6.5)
+    doc.setTextColor(20, 20, 20)
+    doc.text(value || '—', x + width - padX, y + rowH / 2 + 1.1, { align: 'right' })
+    doc.setDrawColor(60, 60, 60)
+    doc.setLineWidth(0.15)
+    doc.line(x, y + rowH, x + width, y + rowH)
+    return y + rowH
+  }
+
   const padX = 3
-  const padTop = 4.5
-  const labelHeight = 3.2
-  const gap = 1
+  const padTop = 4
+  const labelHeight = 3
+  const gap = 0.8
 
   doc.setFontSize(6)
   doc.setTextColor(...PDF_MUTED_COLOR)
@@ -227,8 +288,7 @@ function sidebarBoxLabelValue(
   })
   doc.setFont('helvetica', 'normal')
 
-  const contentHeight = padTop + labelHeight + gap + cappedLines.length * lineHeight + 2.5
-  const blockHeight = Math.max(contentHeight, options?.minHeight ?? 0)
+  const blockHeight = sidebarBlockHeight(doc, width, value, valueFontSize, options?.minHeight)
 
   doc.setDrawColor(60, 60, 60)
   doc.setLineWidth(0.15)
@@ -264,6 +324,42 @@ export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOpt
   doc.setLineWidth(0.3)
   doc.rect(x, topY, sidebarWidth, pageHeight - margin * 2, 'S')
 
+  // ── Budget-aware sizing (2026-09-03) ──────────────────────────────
+  // আগে প্রতিটা label/value ব্লক নিজে নিজে 1 বা 2 লাইনে wrap করত,
+  // কোনো global height-budget awareness ছাড়াই। সাধারণ ডেটাতে এটা
+  // ঠিকই কাজ করত, কিন্তু একসাথে একাধিক লম্বা ফিল্ড (লম্বা Project
+  // Name + লম্বা Client + লম্বা Location + 2-line Report Title, সবগুলো
+  // একই পাতায়) পড়লে মোট height page-এর নিচে গিয়ে ঠেকত এবং copyright
+  // ব্লক clip/truncate হয়ে যেত (rasterize করে ধরা পড়েছিল)।
+  //
+  // এখন draw করার আগে sidebarBlockHeight() (উপরে, sidebarBoxLabelValue-
+  // এর নিজস্ব height formula থেকে বের করে আনা helper) দিয়ে একটা
+  // dry-run measurement pass চালানো হয় — draw-pass আর measure-pass
+  // দুটোই ঠিক একই ফর্মুলা ব্যবহার করে বলে (আগে দুটো আলাদা/ভিন্ন
+  // অনুমান ছিল, যেটাই আসল bug ছিল) projectedTotal এখন actual draw
+  // height-এর সাথে হুবহু মেলে। বাজেট ছাড়িয়ে গেলে ভ্যারিয়েবল ব্লকগুলো
+  // (Project Name/Client/Location/Report Type/Report Title) ছোট font
+  // size-এ যায় — বাকি সব ব্লক অপরিবর্তিত।
+  const fixedBlocksHeight =
+    (8 + 6) + // company header (logoSize + 6)
+    sidebarBlockHeight(doc, sidebarWidth, meta.status ?? '—', 9) + // status
+    sidebarBlockHeight(doc, sidebarWidth, meta.projectCode ?? '—', 9) + // job no
+    10 + // revision table (fixed)
+    sidebarBlockHeight(doc, sidebarWidth, new Date(meta.generatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }), 9) + // date
+    sidebarBlockHeight(doc, sidebarWidth, options.sheetNumber, 13) + // sheet no
+    4.6 * 4 + // 4 compact sign-off rows
+    11 // copyright reserve (2-3 lines at 5.5pt + padding + safety cushion)
+  const reportTypeValue = PDF_REPORT_KIND_LABEL[meta.reportKind] ?? meta.reportKind.replace(/_/g, ' ').toUpperCase()
+  const variableBlocksHeightNormal =
+    sidebarBlockHeight(doc, sidebarWidth, reportTypeValue, 9.5) +
+    sidebarBlockHeight(doc, sidebarWidth, meta.projectName, 9) +
+    sidebarBlockHeight(doc, sidebarWidth, meta.clientName ?? '—', 10) +
+    sidebarBlockHeight(doc, sidebarWidth, meta.location ?? '—', 9) +
+    sidebarBlockHeight(doc, sidebarWidth, options.sheetTitle, 9.5)
+  const projectedTotal = fixedBlocksHeight + variableBlocksHeightNormal
+  const availableHeight = pageHeight - margin * 2
+  const useCompressedVariant = projectedTotal > availableHeight
+
   let y = topY
 
   // Block 1 — Company header (logo mark + app name)
@@ -284,8 +380,17 @@ export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOpt
   y += companyBlockHeight
 
   // Block 2 — Report Type (this app produces reports, not drawings — spec section 4.3)
-  const reportTypeValue = PDF_REPORT_KIND_LABEL[meta.reportKind] ?? meta.reportKind.replace(/_/g, ' ').toUpperCase()
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TYPE :', reportTypeValue, { valueFontSize: 11, bold: true, minHeight: 12 })
+  // ── Font re-tune (2026-09-03) ── sidebar এখন ~53mm (আগে ~104mm
+  // ছিল), তাই আগের 11pt bold value কিছু লম্বা label-এ (যেমন
+  // "MEASUREMENT RULES & ASSUMPTIONS") 2-line cap-এ wrap করে খুব
+  // টাইট হয়ে যাচ্ছিল। 9.5pt-এ নামানো হয়েছে — reference A101 sheet-এর
+  // DRAWING TYPE ব্লকের আনুপাতিক আকারের কাছাকাছি, এবং সব caller-এর
+  // সবচেয়ে লম্বা প্রকৃত মান (PDF_REPORT_KIND_LABEL-এর মান, "MASTER
+  // REPORT" ইত্যাদি) narrower width-এও এক লাইনে ধরে।
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TYPE :', reportTypeValue, {
+    valueFontSize: useCompressedVariant ? 8 : 9.5,
+    bold: true,
+  })
 
   // Block 3 — Status
   y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'STATUS :', meta.status ?? '—')
@@ -294,15 +399,22 @@ export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOpt
   y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'JOB NO :', meta.projectCode ?? '—')
 
   // Block 5 — Project Name
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'PROJECT NAME :', meta.projectName)
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'PROJECT NAME :', meta.projectName, {
+    valueFontSize: useCompressedVariant ? 7.5 : 9,
+  })
 
   // Blocks 6/7 — Building Name/No. omitted — verified no Building concept in this app's Project type (SHEET-DESIGN-SPEC.md section 4.3)
 
   // Block 8 — Client
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'CLIENT :', meta.clientName ?? '—', { valueFontSize: 10, bold: true })
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'CLIENT :', meta.clientName ?? '—', {
+    valueFontSize: useCompressedVariant ? 8.5 : 10,
+    bold: true,
+  })
 
   // Block 9 — Location
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'LOCATION :', meta.location ?? '—')
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'LOCATION :', meta.location ?? '—', {
+    valueFontSize: useCompressedVariant ? 7.5 : 9,
+  })
 
   // Block 10 — Revision table (this app has no revision-history concept yet — single always-current row, matching the reference sheet's own blank-rows-under-header shape)
   doc.setFontSize(6)
@@ -329,7 +441,13 @@ export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOpt
   doc.line(x, y, x + sidebarWidth, y)
 
   // Block 11 — Report Title (this sheet/section's own title, not the report-kind label from block 2)
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TITLE :', options.sheetTitle, { valueFontSize: 11, bold: true, minHeight: 12 })
+  // ── Font re-tune (2026-09-03), see Block 2 note ── এই ব্লকেই সবচেয়ে
+  // লম্বা মান আসে (যেমন "Measurement Rules & Assumptions") — 9.5pt-এ
+  // 2-line cap-এর ভেতর আরামে ধরে, 11pt-এ সরু sidebar-এ আরও tight হতো।
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'REPORT TITLE :', options.sheetTitle, {
+    valueFontSize: useCompressedVariant ? 8 : 9.5,
+    bold: true,
+  })
 
   // Block 12 — Option: omitted, this app has no design-option/variant concept (spec allows omitting rather than showing empty "—")
 
@@ -339,22 +457,64 @@ export function drawSidebar(doc: jsPDF, meta: PdfReportMeta, options: SidebarOpt
   // Block 14 — Scale: omitted, no spatial drawing (spec section 4.3)
 
   // Block 15 — Sheet No.
-  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'SHEET NO :', options.sheetNumber, { valueFontSize: 14, bold: true, minHeight: 13 })
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'SHEET NO :', options.sheetNumber, { valueFontSize: 13, bold: true })
 
-  // Blocks 16-19 — Detail/Design/Checked/Approved By: this app has no sign-off/engineer-of-record data model at all — omitted rather than showing four empty "—" rows with no real field to eventually fill in (unlike EngineX-Structural, which has these blocks feeding from real optional props). Revisiting this if/when this app gains that concept.
+  // Blocks 16-19 — Detail By / Design By / Checked By / Approved By
+  // ── Restored (2026-09-03) ── আগে এই চারটা ব্লক পুরোপুরি বাদ ছিল
+  // ("no sign-off/engineer-of-record data model" যুক্তিতে)। কিন্তু
+  // reference title block (A101 architectural sheet)-এ এই সারিগুলো
+  // সবসময় থাকে — এমনকি ফাঁকা থাকলেও — কারণ sign-off আসলে পরে হাতে/
+  // ডিজিটালি যোগ হওয়া তথ্য, PDF জেনারেশনের সময় থাকতেই হবে এমন না।
+  // sidebar-কে প্রায়-খালি রাখার বদলে honest empty "—" row হিসেবে
+  // দেখানো হচ্ছে (invented নাম না বসিয়ে), reference sheet-এর কাঠামোর
+  // সাথে মিলিয়ে। কোনো নতুন data model লাগেনি — শুধু চারটা label-only
+  // row, ঠিক blocks 3/4/9-এর মতো meta.status/projectCode/location
+  // না-থাকলে যেভাবে "—" দেখায়।
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'DETAIL BY :', '—', { compact: true })
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'DESIGN BY :', '—', { compact: true })
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'CHECKED BY :', '—', { compact: true })
+  y = sidebarBoxLabelValue(doc, x, y, sidebarWidth, 'APPROVED BY :', '—', { compact: true })
 
   // Block 20 — Copyright notice
-  doc.setFontSize(6)
+  // ── Overflow fix (2026-09-03) ── আগে এই ব্লক fixed y+4 থেকে শুরু
+  // করে page bottom border পর্যন্ত জায়গা আছে ধরে নিত। কিন্তু REPORT
+  // TITLE-এর মতো ব্লক (যেমন "Measurement Rules & Assumptions") 2
+  // লাইনে wrap করলে সব নিচের ব্লক (sign-off রো + copyright) নিচের
+  // দিকে ঠেলে যেত, এবং copyright-এর শেষ লাইন sidebar-এর বর্ডারের
+  // বাইরে ক্লিপ হয়ে যাচ্ছিল (rasterize করে ধরা পড়েছে, page 3-এ
+  // "tender submission." কাটা যাচ্ছিল)। এখন available space যা আছে
+  // তার মধ্যেই বসে কিনা যাচাই করে actual bottom boundary অনুযায়ী —
+  // জায়গা কম পড়লে font আরও ছোট করে (6pt থেকে 5.2pt পর্যন্ত), যাতে
+  // content কখনো sidebar-এর বর্ডার-বক্সের বাইরে না যায়।
+  // ── Overflow fix v2 (2026-09-03) ── আগের auto-shrink (6pt→5.2pt)
+  // যথেষ্ট ছিল না — REPORT TITLE 2-লাইনে wrap করলে মাত্র ~7mm অবশিষ্ট
+  // থাকে, কিন্তু 3-লাইন copyright এমনকি 5.2pt-এও ~12mm লাগে। root
+  // cause ঠিক করা হলো এখানে সরাসরি: copyright আসলে ছোট auto-wrap
+  // paragraph হিসেবে বসানো, ফিক্সড ৩-লাইন assumption না করে —
+  // splitTextToSize দিয়ে actual available width-এ যতটুকু লাগে ততটুকু
+  // লাইন বানায় (২ লাইনেই ধরে যায়: label ছোট sidebar width-এও)। Sheet
+  // এর bottom border-এর ভেতরেই থাকা নিশ্চিত করতে clip করা হচ্ছে —
+  // available space সত্যিই না থাকলে (অস্বাভাবিক লম্বা multi-line
+  // sheetTitle-এর edge case) শেষ লাইন বাদ পড়বে, বর্ডার ভেঙে বাইরে
+  // যাবে না।
+  const pageBottom = pageHeight - margin
+  doc.setFontSize(5.5)
   doc.setTextColor(...PDF_MUTED_COLOR)
-  const copyrightLines = [
-    'Auto-generated report — EngineX Quanta.',
-    'For internal estimating use; verify figures before',
-    'tender submission.',
-  ]
+  const copyrightText = 'Auto-generated report — EngineX Quanta. For internal estimating use; verify figures before tender submission.'
+  const copyLines = doc.splitTextToSize(copyrightText, sidebarWidth - 6) as string[]
+  const copyLineHeight = 2.6
+  // ── Overflow fix v3 (2026-09-03) ── আগে Math.max(1, ...) দিয়ে
+  // "অন্তত ১ লাইন" জোর করা হতো, কিন্তু ১ লাইনের জন্যও যথেষ্ট জায়গা
+  // (< 1 লাইন সমান, ~2.6mm+প্যাডিং) না থাকলে সেই এক লাইনও border-এর
+  // ঠিক ওপর দিয়ে/বাইরে চলে যেত (measured: 4.6mm অবশিষ্ট থাকলে ১
+  // লাইনের প্রয়োজন ৪+২.৬=৬.৬mm — তবু জোর করে আঁকা হতো)। এখন সত্যিই
+  // যতটুকু লাইন নিরাপদে ধরে ততটুকুই আঁকা হয় — চরম edge case-এ ০ লাইনও
+  // (copyright পুরো বাদ) সম্ভব, কিন্তু sidebar-এর বর্ডার কখনো ভাঙবে না।
+  const maxCopyLines = Math.max(0, Math.floor((pageBottom - y - 4) / copyLineHeight))
   let copyY = y + 4
-  copyrightLines.forEach((line) => {
+  copyLines.slice(0, maxCopyLines).forEach((line) => {
     doc.text(line, x + 3, copyY, { maxWidth: sidebarWidth - 6 })
-    copyY += 3.2
+    copyY += copyLineHeight
   })
 
   // ⚠️ FIXED (2026-08-26): এই ফাংশন আগে `x` (sidebar-এর বাম প্রান্তের
